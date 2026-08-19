@@ -1,4 +1,6 @@
 import { useEffect, useRef, useState } from "react";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import { askStreaming, type ProposeResponse } from "../llm/client";
 import type { CatalogEntry } from "../graph/nodeCatalog";
 import type { DecisionCatalog } from "../graph/decisionCatalog";
@@ -334,52 +336,54 @@ export function AssistantPanel({ fileName, getXml, catalog, decisions, previewAc
 }
 
 /**
- * Inline markdown, rendered as elements rather than injected as HTML.
+ * Renders the assistant's reply as markdown.
  *
- * The model emphasises the parts of an answer that carry the decision — a threshold, a
- * route name — and those markers are worth honouring rather than deleting. Only the two
- * forms it actually produces are handled, and the text is placed as React children, so
- * nothing in a reply can become markup.
- */
-function inline(text: string, keyPrefix: string) {
-  return text.split(/(\*\*[^*]+\*\*|`[^`]+`)/g).map((part, i) => {
-    const key = `${keyPrefix}-${i}`;
-    if (part.startsWith("**") && part.endsWith("**") && part.length > 4) {
-      return <strong key={key}>{part.slice(2, -2)}</strong>;
-    }
-    if (part.startsWith("`") && part.endsWith("`") && part.length > 2) {
-      return <code key={key}>{part.slice(1, -1)}</code>;
-    }
-    return part;
-  });
-}
-
-/**
- * Renders the assistant's reply, turning its bullet lines into a real list.
+ * <p>The prompts ask for a lead sentence and a few short bullets, and the local models
+ * mostly comply. They also reach for headings, numbered steps, fenced code and the odd
+ * table when a question invites one, and the hand-rolled renderer this replaced handled
+ * only bold, inline code and "- " bullets — so everything else arrived as literal "###"
+ * and "1." in the panel, which reads as a transcript of a prompt rather than an answer.
  *
- * <p>The model is asked for a lead sentence and up to three short points. Leaving them as
- * raw "- " text would read as a transcript of a prompt; as a list it reads as an answer.
+ * <p>Nothing in a reply can become markup. react-markdown builds a React element tree
+ * rather than setting innerHTML, and no rehype-raw plugin is installed, so HTML in a
+ * model's output stays text. That property was true of the renderer this replaces and is
+ * worth keeping: the answer is untrusted, whichever provider produced it.
  */
-function Answer({ text }: { text: string }) {
-  const lines = text.split("\n").filter((line) => line.trim().length > 0);
-  const lead = lines.filter((line) => !line.trimStart().startsWith("- "));
-  const points = lines
-    .filter((line) => line.trimStart().startsWith("- "))
-    .map((line) => line.trimStart().slice(2));
-
+export function Answer({ text }: { text: string }) {
   return (
-    <>
-      {lead.map((line, i) => (
-        <p key={i}>{inline(line, `lead${i}`)}</p>
-      ))}
-      {points.length > 0 && (
-        <ul className="answer-points">
-          {points.map((point, i) => (
-            <li key={i}>{inline(point, `pt${i}`)}</li>
-          ))}
-        </ul>
-      )}
-    </>
+    <ReactMarkdown
+      remarkPlugins={[remarkGfm]}
+      components={{
+        // The bullets keep their existing look: the panel's answers are the only list
+        // that has ever appeared here, and it is styled to match the change-order card.
+        ul: ({ children }) => <ul className="answer-points">{children}</ul>,
+        ol: ({ children }) => <ol className="answer-steps">{children}</ol>,
+        // Headings in a chat bubble are decoration, not navigation. Every level renders
+        // the same, because a model choosing "###" over "##" is not saying anything.
+        h1: ({ children }) => <p className="answer-heading">{children}</p>,
+        h2: ({ children }) => <p className="answer-heading">{children}</p>,
+        h3: ({ children }) => <p className="answer-heading">{children}</p>,
+        h4: ({ children }) => <p className="answer-heading">{children}</p>,
+        h5: ({ children }) => <p className="answer-heading">{children}</p>,
+        h6: ({ children }) => <p className="answer-heading">{children}</p>,
+        // Wrapped so a wide table scrolls inside the bubble instead of stretching it.
+        table: ({ children }) => (
+          <div className="answer-table">
+            <table>{children}</table>
+          </div>
+        ),
+        // A model can put any URL here, so treat it as untrusted: noopener stops the new
+        // tab reaching back through window.opener, and noreferrer keeps the local address
+        // out of the request.
+        a: ({ href, children }) => (
+          <a href={href} target="_blank" rel="noopener noreferrer">
+            {children}
+          </a>
+        ),
+      }}
+    >
+      {text}
+    </ReactMarkdown>
   );
 }
 

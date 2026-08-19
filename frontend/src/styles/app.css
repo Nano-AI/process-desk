@@ -649,3 +649,113 @@ button, input, textarea, select { font: inherit; color: inherit; }
   border-radius: 3px;
   background: var(--panel);
 }
+
+/* ── Markdown in an answer ──
+   Models reach for headings, numbered steps, fenced code and tables. These keep all of
+   that inside the bubble: nothing may widen the panel, so anything that cannot wrap
+   scrolls on its own axis instead. */
+
+.answer-heading {
+  font-family: var(--font-display, inherit);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink);
+  margin-top: 8px;
+}
+
+.msg.assistant > :first-child { margin-top: 0; }
+
+.answer-steps {
+  margin-top: 6px;
+  padding-left: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 13px;
+  color: var(--ink-soft);
+}
+
+.answer-steps li::marker {
+  color: var(--blue);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Nested lists sit closer than top-level ones, so the indent reads as depth. */
+.answer-points ul,
+.answer-points ol,
+.answer-steps ul,
+.answer-steps ol {
+  margin-top: 4px;
+  padding-left: 14px;
+}
+
+.msg.assistant em { font-style: italic; }
+
+.msg.assistant del { opacity: 0.6; }
+
+.msg.assistant pre {
+  margin-top: 6px;
+  padding: 8px 10px;
+  border-radius: 6px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  overflow-x: auto;
+}
+
+/* The inline-code rule adds a background and padding, which look wrong repeated on every
+   line inside a block. */
+.msg.assistant pre code {
+  padding: 0;
+  background: none;
+  font-size: 12px;
+  line-height: 1.5;
+  white-space: pre;
+}
+
+.msg.assistant blockquote {
+  margin-top: 6px;
+  padding-left: 10px;
+  border-left: 2px solid var(--blue);
+  color: var(--ink-soft);
+}
+
+.msg.assistant hr {
+  margin: 10px 0;
+  border: 0;
+  border-top: 1px solid var(--line);
+}
+
+.answer-table {
+  margin-top: 6px;
+  overflow-x: auto;
+}
+
+.answer-table table {
+  border-collapse: collapse;
+  font-size: 12px;
+}
+
+.answer-table th,
+.answer-table td {
+  border: 1px solid var(--line);
+  padding: 4px 8px;
+  text-align: left;
+  white-space: nowrap;
+}
+
+.answer-table th {
+  background: var(--panel);
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.msg.assistant a {
+  color: var(--blue);
+  text-decoration: underline;
+}
+
+/* A long URL or identifier has no break opportunity and would otherwise push the bubble
+   past the panel edge. */
+.msg.assistant p,
+.answer-points li,
+.answer-steps li { overflow-wrap: anywhere; }
