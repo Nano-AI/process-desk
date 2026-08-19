@@ -1,6 +1,6 @@
 # AI Assistant for Kogito Process & Decision Editing — Proposal
 
-**Author:** Adi Bankoti
+**Author:** Aditya Bankoti
 **Status:** Draft for review — working MVP built
 **Date:** August 2026
 
