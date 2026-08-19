@@ -1,0 +1,9 @@
+{
+  "name": "process-desk",
+  "private": true,
+  "scripts": {
+    "dev": "npm --prefix frontend run dev",
+    "backend": "cd backend && ./gradlew bootRun",
+    "build": "npm --prefix frontend run build && cd backend && ./gradlew build"
+  }
+}

@@ -1,0 +1,142 @@
+plugins {
+    id 'java'
+    id 'org.springframework.boot' version '3.5.3'
+    id 'io.spring.dependency-management' version '1.1.7'
+}
+
+group = 'com.processdesk'
+version = '0.1.0'
+
+java {
+    toolchain {
+        languageVersion = JavaLanguageVersion.of(21)
+    }
+}
+
+repositories {
+    mavenCentral()
+}
+
+ext {
+    kogitoVersion = '10.2.0'
+}
+
+dependencies {
+    implementation 'org.springframework.boot:spring-boot-starter-web'
+
+    // Kogito engines. Processes and decisions are read, validated, and executed by
+    // Kogito itself — this application never interprets BPMN or DMN semantics on its own.
+    implementation "org.kie.kogito:jbpm-bpmn2:${kogitoVersion}"      // BPMN parsing + process engine
+    implementation "org.kie:kie-dmn-core:${kogitoVersion}"           // DMN decision engine
+    implementation "org.kie:kie-dmn-validation:${kogitoVersion}"     // DMN model validation
+
+    testImplementation 'org.springframework.boot:spring-boot-starter-test'
+}
+
+tasks.named('test') {
+    useJUnitPlatform()
+}
+
+/**
+ * Reads the project-root .env into the environment of anything this build runs.
+ *
+ * <p>Spring Boot does not read .env itself, and the alternatives are worse: an API key in
+ * application.yml is a key in git history, and a key exported from a shell profile is a key
+ * that works on one machine and puzzles the next person. This keeps it in one gitignored
+ * file that the README can point at.
+ *
+ * <p>Values already in the real environment win, so CI can set a key without a file.
+ */
+def dotenv = { ->
+    def values = [:]
+    def envFile = rootProject.file('../.env')
+    if (!envFile.exists()) {
+        envFile = rootProject.file('.env')
+    }
+    if (!envFile.exists()) {
+        return values
+    }
+    envFile.eachLine { line ->
+        def entry = line.trim()
+        if (entry.isEmpty() || entry.startsWith('#')) {
+            return
+        }
+        def split = entry.indexOf('=')
+        if (split <= 0) {
+            return
+        }
+        def key = entry.substring(0, split).trim()
+        def value = entry.substring(split + 1).trim()
+        // Quotes are how a value with spaces is written; they are not part of the value.
+        if (value.length() >= 2 && ((value.startsWith('"') && value.endsWith('"'))
+                || (value.startsWith("'") && value.endsWith("'")))) {
+            value = value.substring(1, value.length() - 1)
+        }
+        if (!System.getenv(key)) {
+            values[key] = value
+        }
+    }
+    return values
+}
+
+tasks.named('bootRun') {
+    environment dotenv()
+}
+
+/**
+ * Reports how the projections and gates hold up against files this project did not write.
+ * Needs ./scripts/fetch-corpora.sh first; prints a report rather than failing a build.
+ */
+tasks.register('surveyCorpora', JavaExec) {
+    group = 'verification'
+    description = 'Measure BPMN/DMN reading against the fetched corpora'
+    classpath = sourceSets.test.runtimeClasspath
+    mainClass = 'com.processdesk.corpus.CorpusSurvey'
+    args = [project.findProperty('corpora') ?: '../corpora']
+}
+
+/**
+ * Prints what the model would see for a given DMN or BPMN file, and whether the gates
+ * accept it. Useful when trying a file this project did not write:
+ *   ./gradlew inspect -Pfile=../corpora/dmn-tck/.../0004-lending.dmn
+ */
+tasks.register('inspect', JavaExec) {
+    group = 'verification'
+    description = 'Show the projection and gate results for one asset'
+    classpath = sourceSets.test.runtimeClasspath
+    mainClass = 'com.processdesk.corpus.Inspect'
+    args = (project.findProperty('file') ?: '').toString().split(',').findAll { it }
+}
+
+/**
+ * Which decisions a request narrows to, and why. Costs no model call:
+ *   ./gradlew focus -Pq="change the income risk category to high"
+ */
+/**
+ * How well a model drives the tool loop. Costs real model calls and takes minutes, so it is
+ * never part of `test`:
+ *   ./gradlew bench -Pllm=gpt-oss:20b
+ *   ./gradlew bench -Pllm=ornith:9b -Pruns=2
+ *
+ * The property is `llm` and not `model` because `model` is a reserved Gradle Project property:
+ * `-Pmodel=` is silently shadowed, findProperty returns the Project, and the benchmark cheerfully
+ * asks Ollama for a model called "root project 'process-desk-backend'". Every request then fails
+ * identically, which reads exactly like a broken model rather than a broken build script.
+ */
+tasks.register('bench', JavaExec) {
+    group = 'verification'
+    description = 'Measure how well a model drives the tool loop'
+    classpath = sourceSets.test.runtimeClasspath
+    mainClass = 'com.processdesk.corpus.Benchmark'
+    systemProperty 'bench.model', project.findProperty('llm') ?: 'gpt-oss:20b'
+    systemProperty 'bench.runs', project.findProperty('runs') ?: '1'
+    systemProperty 'bench.maxTurns', project.findProperty('maxTurns') ?: '12'
+}
+
+tasks.register('focus', JavaExec) {
+    group = 'verification'
+    description = 'Show which decisions a request ranks to'
+    classpath = sourceSets.test.runtimeClasspath
+    mainClass = 'com.processdesk.corpus.Focus'
+    args = (project.findProperty('q') ?: '').toString().split('\\|').findAll { it }
+}

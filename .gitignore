@@ -1,0 +1,12 @@
+# Fetched test corpora — other projects' files, reproducible via scripts/fetch-corpora.sh
+corpora/
+
+# API keys and machine-local settings. .env.example is committed; .env never is.
+.env
+.env.local
+
+node_modules/
+dist/
+build/
+.gradle/
+audit.log

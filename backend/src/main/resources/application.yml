@@ -1,0 +1,97 @@
+server:
+  port: 4000
+
+spring:
+  mvc:
+    async:
+      # The streaming endpoint holds a request open for the whole tool loop, which is a dozen
+      # model calls. The container default is 30 seconds — long enough that a short Gemini run
+      # slips under it and looks fine, and far too short for anything else: the async thread is
+      # interrupted mid-call, the HTTP send throws InterruptedException with no message, and the
+      # panel reports "I couldn't reach the model" about a model that was answering normally.
+      # A local model at 65-300 seconds a request would never once have succeeded.
+      request-timeout: 900000
+
+processdesk:
+  # Where editable BPMN and DMN assets live. Kept outside src/main/resources so saves
+  # do not require a rebuild.
+  assets-dir: ./assets
+  audit-file: ./audit.log
+
+  # "dummy" answers from the file itself; "ollama" runs the local model; "gemini" calls
+  # the hosted API. Switching this changes what the system understands, not how it edits
+  # or validates — every provider goes through the same gates and the same editors.
+  # Set AI_PROVIDER in .env to change it without editing this file.
+  ai-provider: ${AI_PROVIDER:dummy}
+
+  # Lets a provider that supports tool calling look at the decision model, change it, check
+  # its own work, and fix what it broke — instead of getting one guess at one edit from a
+  # projection chosen for it in advance. Providers that can't call tools ignore this and use
+  # the one-shot path, which remains the floor every provider meets.
+  tool-loop:
+    enabled: ${TOOL_LOOP:true}
+    # A model that never calls done is a real failure of small local models, and an unbounded
+    # conversation spends a quota or a laptop rather than admitting it is stuck.
+    #
+    # Twelve, because eight was measured to be exactly enough and therefore too few. A
+    # two-part edit that corrects itself runs list, show, set, check, show, set, check, done —
+    # eight turns with nothing spare, so gpt-oss:20b hit the cap having made one of the two
+    # changes and the proposal was withheld for the overlap the other would have fixed.
+    max-turns: ${TOOL_LOOP_MAX_TURNS:12}
+
+  ollama:
+    base-url: ${OLLAMA_BASE_URL:http://localhost:11434}
+    model: ${OLLAMA_MODEL:ornith:9b}
+    # Ollama defaults to 4096, which silently truncates. The prompt is a projection
+    # rather than a file, so 8192 is generous.
+    num-ctx: 8192
+    # Zero, not 0.1, for the same reason Gemini is at zero: choosing which tool to call and
+    # which rule number to name is classification, and sampling variance on a classification
+    # is pure downside. Measured here on the same two-part DTI request — at 0.1 one run made
+    # both edits and self-corrected, and the next made one and ran out of turns.
+    temperature: 0
+    # Without this the model unloads after 5 minutes and the next request pays to reload.
+    keep-alive: 30m
+    # ornith is a reasoning model; its private reasoning costs time and is never read.
+    # Measured here: 9s with thinking off against 25s with it on, same answers.
+    think: false
+    # Generous enough to cover the first request, which loads the model.
+    timeout-seconds: 120
+
+  gemini:
+    base-url: https://generativelanguage.googleapis.com/v1beta
+    # Flash is the right size for this work: the model picks one of four kinds and names a
+    # value from an enum. Flash-lite has a larger free-tier daily quota if that is the
+    # binding limit; Pro is only worth it if explanations need it.
+    # Models are retired, and a key issued afterwards gets a 404 rather than a warning —
+    # gemini-2.5-flash was the first default here and is already gone for new keys. List
+    # what a key can reach:
+    #   curl -H "x-goog-api-key: $GEMINI_API_KEY" \
+    #     https://generativelanguage.googleapis.com/v1beta/models
+    model: ${GEMINI_MODEL:gemini-3.5-flash}
+    # Never written here. Put it in .env at the project root, which is gitignored.
+    api-key: ${GEMINI_API_KEY:}
+    # Zero, not 0.1. Picking which kind of edit a sentence describes is a classification,
+    # and sampling variance on a classification is pure downside: measured at 0.1, the same
+    # request chose SET_CONDITION_WHERE twice and SET_CONDITION once, and the third run was
+    # refused. Prose is a little flatter at 0; a coin-flip on an edit is worse.
+    temperature: 0
+    # Gemini thinks by default and charges latency for it on a request whose whole job is
+    # picking one of four kinds. 0 turns it off; -1 does not send the setting at all.
+    # Measured on gemini-3.5-flash: 0.7s with it off against 1.3s with it on, same answer.
+    # Not every model accepts it — flash-lite and flash-latest answer 400 — so the provider
+    # drops it and retries once rather than making you know which family you are on.
+    thinking-budget: 0
+    timeout-seconds: 60
+    # Free-tier requests per day, per model — Google publishes no endpoint for what is left,
+    # so /api/health counts what this application spends and reports it against this number.
+    # flash-lite is 500/day and 15/min; the full Flash models are 20/day and 5/min, which is
+    # a 25x difference and the reason flash-lite is the default. 0 means "unknown", and the
+    # count is still reported without a ceiling. Check yours: https://ai.dev/rate-limit
+    daily-limit: ${GEMINI_DAILY_LIMIT:0}
+
+logging:
+  level:
+    org.drools: WARN
+    org.jbpm: WARN
+    org.kie: WARN

@@ -1,0 +1,153 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bpmn2:definitions xmlns:bpmn2="http://www.omg.org/spec/BPMN/20100524/MODEL"
+                   xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI"
+                   xmlns:dc="http://www.omg.org/spec/DD/20100524/DC"
+                   xmlns:di="http://www.omg.org/spec/DD/20100524/DI"
+                   id="Definitions_member_refund"
+                   targetNamespace="http://example.internal/processes/member-refund">
+  <bpmn2:process id="member-refund" name="Member Refund" isExecutable="true">
+
+    <bpmn2:startEvent id="Start" name="Refund requested">
+      <bpmn2:outgoing>F_start</bpmn2:outgoing>
+    </bpmn2:startEvent>
+
+    <bpmn2:task id="Task_Submit" name="Submit Request">
+      <bpmn2:incoming>F_start</bpmn2:incoming>
+      <bpmn2:outgoing>F_submit</bpmn2:outgoing>
+    </bpmn2:task>
+
+    <bpmn2:task id="Task_Verify" name="Verify Membership">
+      <bpmn2:incoming>F_submit</bpmn2:incoming>
+      <bpmn2:outgoing>F_verify</bpmn2:outgoing>
+    </bpmn2:task>
+
+    <bpmn2:task id="Task_Route" name="Decide Approval Route">
+      <bpmn2:incoming>F_verify</bpmn2:incoming>
+      <bpmn2:outgoing>F_route</bpmn2:outgoing>
+    </bpmn2:task>
+
+    <bpmn2:exclusiveGateway id="Gate_Route" name="Which approval?" gatewayDirection="Diverging" default="F_auto">
+      <bpmn2:incoming>F_route</bpmn2:incoming>
+      <bpmn2:outgoing>F_auto</bpmn2:outgoing>
+      <bpmn2:outgoing>F_manager</bpmn2:outgoing>
+    </bpmn2:exclusiveGateway>
+
+    <bpmn2:task id="Task_Auto" name="Approve Automatically">
+      <bpmn2:incoming>F_auto</bpmn2:incoming>
+      <bpmn2:outgoing>F_auto_done</bpmn2:outgoing>
+    </bpmn2:task>
+
+    <bpmn2:task id="Task_Manager" name="Manager Approval">
+      <bpmn2:incoming>F_manager</bpmn2:incoming>
+      <bpmn2:outgoing>F_manager_done</bpmn2:outgoing>
+    </bpmn2:task>
+
+    <bpmn2:exclusiveGateway id="Gate_Join" name="Approved" gatewayDirection="Converging">
+      <bpmn2:incoming>F_auto_done</bpmn2:incoming>
+      <bpmn2:incoming>F_manager_done</bpmn2:incoming>
+      <bpmn2:outgoing>F_join</bpmn2:outgoing>
+    </bpmn2:exclusiveGateway>
+
+    <bpmn2:task id="Task_Issue" name="Issue Refund">
+      <bpmn2:incoming>F_join</bpmn2:incoming>
+      <bpmn2:outgoing>F_issue</bpmn2:outgoing>
+    </bpmn2:task>
+
+    <bpmn2:task id="Task_Notify" name="Notify Member">
+      <bpmn2:incoming>F_issue</bpmn2:incoming>
+      <bpmn2:outgoing>F_notify</bpmn2:outgoing>
+    </bpmn2:task>
+
+    <bpmn2:endEvent id="End" name="Refund complete">
+      <bpmn2:incoming>F_notify</bpmn2:incoming>
+    </bpmn2:endEvent>
+
+    <bpmn2:sequenceFlow id="F_start" sourceRef="Start" targetRef="Task_Submit"/>
+    <bpmn2:sequenceFlow id="F_submit" sourceRef="Task_Submit" targetRef="Task_Verify"/>
+    <bpmn2:sequenceFlow id="F_verify" sourceRef="Task_Verify" targetRef="Task_Route"/>
+    <bpmn2:sequenceFlow id="F_route" sourceRef="Task_Route" targetRef="Gate_Route"/>
+    <bpmn2:sequenceFlow id="F_auto" name="under $50" sourceRef="Gate_Route" targetRef="Task_Auto"/>
+    <bpmn2:sequenceFlow id="F_manager" name="$50 or more" sourceRef="Gate_Route" targetRef="Task_Manager">
+      <bpmn2:conditionExpression xsi:type="bpmn2:tFormalExpression"
+                                 xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+                                 language="http://www.java.com/java">return false;</bpmn2:conditionExpression>
+    </bpmn2:sequenceFlow>
+    <bpmn2:sequenceFlow id="F_auto_done" sourceRef="Task_Auto" targetRef="Gate_Join"/>
+    <bpmn2:sequenceFlow id="F_manager_done" sourceRef="Task_Manager" targetRef="Gate_Join"/>
+    <bpmn2:sequenceFlow id="F_join" sourceRef="Gate_Join" targetRef="Task_Issue"/>
+    <bpmn2:sequenceFlow id="F_issue" sourceRef="Task_Issue" targetRef="Task_Notify"/>
+    <bpmn2:sequenceFlow id="F_notify" sourceRef="Task_Notify" targetRef="End"/>
+  </bpmn2:process>
+
+  <bpmndi:BPMNDiagram id="Diagram">
+    <bpmndi:BPMNPlane id="Plane" bpmnElement="member-refund">
+      <bpmndi:BPMNShape id="S_Start" bpmnElement="Start">
+        <dc:Bounds x="100" y="200" width="56" height="56"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="S_Submit" bpmnElement="Task_Submit">
+        <dc:Bounds x="200" y="196" width="150" height="64"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="S_Verify" bpmnElement="Task_Verify">
+        <dc:Bounds x="390" y="196" width="150" height="64"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="S_Route" bpmnElement="Task_Route">
+        <dc:Bounds x="580" y="196" width="150" height="64"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="S_Gate_Route" bpmnElement="Gate_Route">
+        <dc:Bounds x="780" y="206" width="44" height="44"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="S_Auto" bpmnElement="Task_Auto">
+        <dc:Bounds x="880" y="110" width="150" height="64"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="S_Manager" bpmnElement="Task_Manager">
+        <dc:Bounds x="880" y="290" width="150" height="64"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="S_Gate_Join" bpmnElement="Gate_Join">
+        <dc:Bounds x="1080" y="206" width="44" height="44"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="S_Issue" bpmnElement="Task_Issue">
+        <dc:Bounds x="1180" y="196" width="150" height="64"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="S_Notify" bpmnElement="Task_Notify">
+        <dc:Bounds x="1370" y="196" width="150" height="64"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="S_End" bpmnElement="End">
+        <dc:Bounds x="1570" y="200" width="56" height="56"/>
+      </bpmndi:BPMNShape>
+
+      <bpmndi:BPMNEdge id="E_start" bpmnElement="F_start">
+        <di:waypoint x="156" y="228"/><di:waypoint x="200" y="228"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="E_submit" bpmnElement="F_submit">
+        <di:waypoint x="350" y="228"/><di:waypoint x="390" y="228"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="E_verify" bpmnElement="F_verify">
+        <di:waypoint x="540" y="228"/><di:waypoint x="580" y="228"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="E_route" bpmnElement="F_route">
+        <di:waypoint x="730" y="228"/><di:waypoint x="780" y="228"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="E_auto" bpmnElement="F_auto">
+        <di:waypoint x="802" y="206"/><di:waypoint x="802" y="142"/><di:waypoint x="880" y="142"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="E_manager" bpmnElement="F_manager">
+        <di:waypoint x="802" y="250"/><di:waypoint x="802" y="322"/><di:waypoint x="880" y="322"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="E_auto_done" bpmnElement="F_auto_done">
+        <di:waypoint x="1030" y="142"/><di:waypoint x="1102" y="142"/><di:waypoint x="1102" y="206"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="E_manager_done" bpmnElement="F_manager_done">
+        <di:waypoint x="1030" y="322"/><di:waypoint x="1102" y="322"/><di:waypoint x="1102" y="250"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="E_join" bpmnElement="F_join">
+        <di:waypoint x="1124" y="228"/><di:waypoint x="1180" y="228"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="E_issue" bpmnElement="F_issue">
+        <di:waypoint x="1330" y="228"/><di:waypoint x="1370" y="228"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="E_notify" bpmnElement="F_notify">
+        <di:waypoint x="1520" y="228"/><di:waypoint x="1570" y="228"/>
+      </bpmndi:BPMNEdge>
+    </bpmndi:BPMNPlane>
+  </bpmndi:BPMNDiagram>
+</bpmn2:definitions>

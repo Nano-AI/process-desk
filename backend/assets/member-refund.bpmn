@@ -1,0 +1,205 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bpmn2:definitions xmlns:bpmn2="http://www.omg.org/spec/BPMN/20100524/MODEL"
+                   xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI"
+                   xmlns:dc="http://www.omg.org/spec/DD/20100524/DC"
+                   xmlns:di="http://www.omg.org/spec/DD/20100524/DI"
+                   xmlns:drools="http://www.jboss.org/drools"
+                   xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+                   id="Definitions_member_refund"
+                   targetNamespace="http://example.internal/processes/member-refund">
+   <bpmn2:process id="member-refund" isExecutable="true" name="Member Refund">
+      <bpmn2:startEvent id="Start" name="Refund requested">
+         <bpmn2:outgoing>F_start</bpmn2:outgoing>
+      </bpmn2:startEvent>
+      <bpmn2:endEvent id="End" name="Refund complete">
+         <bpmn2:incoming>F_notify</bpmn2:incoming>
+      </bpmn2:endEvent>
+      <bpmn2:exclusiveGateway default="F_auto"
+                              gatewayDirection="Diverging"
+                              id="Gate_Route"
+                              name="Which approval?">
+         <bpmn2:incoming>F_route</bpmn2:incoming>
+         <bpmn2:outgoing>F_auto</bpmn2:outgoing>
+         <bpmn2:outgoing>F_manager</bpmn2:outgoing>
+      </bpmn2:exclusiveGateway>
+      <bpmn2:exclusiveGateway gatewayDirection="Converging" id="Gate_Join" name="Approved">
+         <bpmn2:incoming>F_auto_done</bpmn2:incoming>
+         <bpmn2:incoming>F_manager_done</bpmn2:incoming>
+         <bpmn2:outgoing>F_join</bpmn2:outgoing>
+      </bpmn2:exclusiveGateway>
+      <bpmn2:task id="Task_Submit" name="Submit Request">
+         <bpmn2:incoming>F_start</bpmn2:incoming>
+         <bpmn2:outgoing>Flow_e07f7be7</bpmn2:outgoing>
+      </bpmn2:task>
+      <bpmn2:task id="Task_Verify" name="Verify Membership">
+         <bpmn2:incoming>F_submit</bpmn2:incoming>
+         <bpmn2:outgoing>Flow_33e282b4</bpmn2:outgoing>
+      </bpmn2:task>
+      <bpmn2:task id="Task_Route" name="Decide Approval Route">
+         <bpmn2:incoming>F_verify</bpmn2:incoming>
+         <bpmn2:outgoing>F_route</bpmn2:outgoing>
+      </bpmn2:task>
+      <bpmn2:task id="Task_Auto" name="Approve Automatically">
+         <bpmn2:incoming>F_auto</bpmn2:incoming>
+         <bpmn2:outgoing>F_auto_done</bpmn2:outgoing>
+      </bpmn2:task>
+      <bpmn2:task id="Task_Manager" name="Manager Approval">
+         <bpmn2:incoming>F_manager</bpmn2:incoming>
+         <bpmn2:outgoing>F_manager_done</bpmn2:outgoing>
+      </bpmn2:task>
+      <bpmn2:task id="Task_Issue" name="Issue Refund">
+         <bpmn2:incoming>F_join</bpmn2:incoming>
+         <bpmn2:outgoing>F_issue</bpmn2:outgoing>
+      </bpmn2:task>
+      <bpmn2:task id="Task_Notify" name="Notify Member">
+         <bpmn2:incoming>F_issue</bpmn2:incoming>
+         <bpmn2:outgoing>F_notify</bpmn2:outgoing>
+      </bpmn2:task>
+      <bpmn2:task id="Task_965ba03b" name="test">
+         <bpmn2:incoming>Flow_33e282b4</bpmn2:incoming>
+         <bpmn2:outgoing>F_verify</bpmn2:outgoing>
+      </bpmn2:task>
+      <bpmn2:task id="Task_993308a4" name="Gatekeep">
+         <bpmn2:incoming>Flow_dbba5a61</bpmn2:incoming>
+         <bpmn2:outgoing>F_submit</bpmn2:outgoing>
+      </bpmn2:task>
+      <bpmn2:task id="Task_875489da" name="pre checkws">
+         <bpmn2:incoming>Flow_e07f7be7</bpmn2:incoming>
+         <bpmn2:outgoing>Flow_dbba5a61</bpmn2:outgoing>
+      </bpmn2:task>
+      <bpmn2:sequenceFlow id="F_start" sourceRef="Start" targetRef="Task_Submit"/>
+      <bpmn2:sequenceFlow id="F_submit" sourceRef="Task_993308a4" targetRef="Task_Verify"/>
+      <bpmn2:sequenceFlow id="F_verify" sourceRef="Task_965ba03b" targetRef="Task_Route"/>
+      <bpmn2:sequenceFlow id="F_route" sourceRef="Task_Route" targetRef="Gate_Route"/>
+      <bpmn2:sequenceFlow id="F_auto"
+                          name="under $50"
+                          sourceRef="Gate_Route"
+                          targetRef="Task_Auto"/>
+      <bpmn2:sequenceFlow id="F_manager"
+                          name="$50 or more"
+                          sourceRef="Gate_Route"
+                          targetRef="Task_Manager">
+         <bpmn2:conditionExpression language="http://www.java.com/java" xsi:type="bpmn2:tFormalExpression">return false;</bpmn2:conditionExpression>
+      </bpmn2:sequenceFlow>
+      <bpmn2:sequenceFlow id="F_auto_done" sourceRef="Task_Auto" targetRef="Gate_Join"/>
+      <bpmn2:sequenceFlow id="F_manager_done" sourceRef="Task_Manager" targetRef="Gate_Join"/>
+      <bpmn2:sequenceFlow id="F_join" sourceRef="Gate_Join" targetRef="Task_Issue"/>
+      <bpmn2:sequenceFlow id="F_issue" sourceRef="Task_Issue" targetRef="Task_Notify"/>
+      <bpmn2:sequenceFlow id="F_notify" sourceRef="Task_Notify" targetRef="End"/>
+      <bpmn2:sequenceFlow id="Flow_33e282b4"
+                          sourceRef="Task_Verify"
+                          targetRef="Task_965ba03b"/>
+      <bpmn2:sequenceFlow id="Flow_dbba5a61"
+                          sourceRef="Task_875489da"
+                          targetRef="Task_993308a4"/>
+      <bpmn2:sequenceFlow id="Flow_e07f7be7"
+                          sourceRef="Task_Submit"
+                          targetRef="Task_875489da"/>
+   </bpmn2:process>
+   <bpmndi:BPMNDiagram id="Diagram">
+      <bpmndi:BPMNPlane bpmnElement="member-refund" id="Plane">
+         <bpmndi:BPMNShape bpmnElement="Start" id="S_Start">
+            <dc:Bounds height="56" width="56" x="100" y="200"/>
+         </bpmndi:BPMNShape>
+         <bpmndi:BPMNShape bpmnElement="Task_Submit" id="S_Submit">
+            <dc:Bounds height="64" width="150" x="200" y="196"/>
+         </bpmndi:BPMNShape>
+         <bpmndi:BPMNShape bpmnElement="Task_Verify" id="S_Verify">
+            <dc:Bounds height="64" width="150" x="390" y="196"/>
+         </bpmndi:BPMNShape>
+         <bpmndi:BPMNShape bpmnElement="Task_Route" id="S_Route">
+            <dc:Bounds height="64" width="150" x="580" y="196"/>
+         </bpmndi:BPMNShape>
+         <bpmndi:BPMNShape bpmnElement="Gate_Route" id="S_Gate_Route">
+            <dc:Bounds height="44" width="44" x="780" y="206"/>
+         </bpmndi:BPMNShape>
+         <bpmndi:BPMNShape bpmnElement="Task_Auto" id="S_Auto">
+            <dc:Bounds height="64" width="150" x="880" y="110"/>
+         </bpmndi:BPMNShape>
+         <bpmndi:BPMNShape bpmnElement="Task_Manager" id="S_Manager">
+            <dc:Bounds height="64" width="150" x="880" y="290"/>
+         </bpmndi:BPMNShape>
+         <bpmndi:BPMNShape bpmnElement="Gate_Join" id="S_Gate_Join">
+            <dc:Bounds height="44" width="44" x="1080" y="206"/>
+         </bpmndi:BPMNShape>
+         <bpmndi:BPMNShape bpmnElement="Task_Issue" id="S_Issue">
+            <dc:Bounds height="64" width="150" x="1180" y="196"/>
+         </bpmndi:BPMNShape>
+         <bpmndi:BPMNShape bpmnElement="Task_Notify" id="S_Notify">
+            <dc:Bounds height="64" width="150" x="1370" y="196"/>
+         </bpmndi:BPMNShape>
+         <bpmndi:BPMNShape bpmnElement="End" id="S_End">
+            <dc:Bounds height="56" width="56" x="1570" y="200"/>
+         </bpmndi:BPMNShape>
+         <bpmndi:BPMNShape bpmnElement="Task_965ba03b" id="Shape_Task_965ba03b">
+            <dc:Bounds height="64" width="154" x="390" y="320"/>
+         </bpmndi:BPMNShape>
+         <bpmndi:BPMNShape bpmnElement="Task_993308a4" id="Shape_Task_993308a4">
+            <dc:Bounds height="64" width="154" x="200" y="320"/>
+         </bpmndi:BPMNShape>
+         <bpmndi:BPMNEdge bpmnElement="F_start" id="E_start">
+            <di:waypoint x="156" y="228"/>
+            <di:waypoint x="200" y="228"/>
+         </bpmndi:BPMNEdge>
+         <bpmndi:BPMNEdge bpmnElement="F_submit" id="E_submit">
+            <di:waypoint x="277" y="384"/>
+            <di:waypoint x="390" y="228"/>
+         </bpmndi:BPMNEdge>
+         <bpmndi:BPMNEdge bpmnElement="F_verify" id="E_verify">
+            <di:waypoint x="467" y="384"/>
+            <di:waypoint x="580" y="228"/>
+         </bpmndi:BPMNEdge>
+         <bpmndi:BPMNEdge bpmnElement="F_route" id="E_route">
+            <di:waypoint x="730" y="228"/>
+            <di:waypoint x="780" y="228"/>
+         </bpmndi:BPMNEdge>
+         <bpmndi:BPMNEdge bpmnElement="F_auto" id="E_auto">
+            <di:waypoint x="802" y="206"/>
+            <di:waypoint x="802" y="142"/>
+            <di:waypoint x="880" y="142"/>
+         </bpmndi:BPMNEdge>
+         <bpmndi:BPMNEdge bpmnElement="F_manager" id="E_manager">
+            <di:waypoint x="802" y="250"/>
+            <di:waypoint x="802" y="322"/>
+            <di:waypoint x="880" y="322"/>
+         </bpmndi:BPMNEdge>
+         <bpmndi:BPMNEdge bpmnElement="F_auto_done" id="E_auto_done">
+            <di:waypoint x="1030" y="142"/>
+            <di:waypoint x="1102" y="142"/>
+            <di:waypoint x="1102" y="206"/>
+         </bpmndi:BPMNEdge>
+         <bpmndi:BPMNEdge bpmnElement="F_manager_done" id="E_manager_done">
+            <di:waypoint x="1030" y="322"/>
+            <di:waypoint x="1102" y="322"/>
+            <di:waypoint x="1102" y="250"/>
+         </bpmndi:BPMNEdge>
+         <bpmndi:BPMNEdge bpmnElement="F_join" id="E_join">
+            <di:waypoint x="1124" y="228"/>
+            <di:waypoint x="1180" y="228"/>
+         </bpmndi:BPMNEdge>
+         <bpmndi:BPMNEdge bpmnElement="F_issue" id="E_issue">
+            <di:waypoint x="1330" y="228"/>
+            <di:waypoint x="1370" y="228"/>
+         </bpmndi:BPMNEdge>
+         <bpmndi:BPMNEdge bpmnElement="F_notify" id="E_notify">
+            <di:waypoint x="1520" y="228"/>
+            <di:waypoint x="1570" y="228"/>
+         </bpmndi:BPMNEdge>
+         <bpmndi:BPMNEdge bpmnElement="Flow_33e282b4" id="Edge_Flow_33e282b4">
+            <di:waypoint x="465" y="260"/>
+            <di:waypoint x="467" y="320"/>
+         </bpmndi:BPMNEdge>
+         <bpmndi:BPMNEdge bpmnElement="Flow_dbba5a61" id="Edge_Flow_dbba5a61">
+            <di:waypoint x="277" y="384"/>
+            <di:waypoint x="277" y="320"/>
+         </bpmndi:BPMNEdge>
+         <bpmndi:BPMNShape bpmnElement="Task_875489da" id="Shape_Task_875489da">
+            <dc:Bounds height="64" width="154" x="200" y="320"/>
+         </bpmndi:BPMNShape>
+         <bpmndi:BPMNEdge bpmnElement="Flow_e07f7be7" id="Edge_Flow_e07f7be7">
+            <di:waypoint x="275" y="260"/>
+            <di:waypoint x="277" y="320"/>
+         </bpmndi:BPMNEdge>
+      </bpmndi:BPMNPlane>
+   </bpmndi:BPMNDiagram>
+</bpmn2:definitions>
