@@ -54,10 +54,11 @@ class DecisionWorkspaceTest {
         // projection rendered the formula as a name with nothing under it, indistinguishable
         // from a table with no rules, and the model picked it and correctly reported that it
         // had no rules to change.
-        assertTrue(listing.contains("\"DTI\" — a formula"), listing);
-        assertTrue(listing.contains("\"Affordability Category\""), listing);
-        assertTrue(listing.contains("looks at: DTI"),
+        assertTrue(listing.contains("DTI · formula"), listing);
+        assertTrue(listing.contains("Affordability Category · 3 rules · DTI"),
                 "the listing has to show that a different decision tests DTI as a column");
+        // Said once at the end rather than beside each of the five formulas in this file.
+        assertEquals(1, listing.split("A formula has no rules to edit", -1).length - 1, listing);
     }
 
     @Test

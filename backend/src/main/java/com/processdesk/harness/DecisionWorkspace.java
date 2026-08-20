@@ -90,20 +90,28 @@ public class DecisionWorkspace {
                 return "This file has no decisions.";
             }
 
+            // One line each, and the formula caveat said once at the end rather than on every
+            // formula. The lending model has five of them, and repeating a fourteen-token
+            // explanation five times spent seventy tokens stating one fact.
             StringBuilder out = new StringBuilder();
+            boolean anyFormula = false;
             for (Element decision : decisions) {
                 String name = BpmnDocument.displayName(decision);
                 Element table = firstChild(decision, "decisionTable");
-                out.append("\n\"").append(name).append("\" — ");
+                out.append("\n").append(name).append(" · ");
                 if (table == null) {
-                    out.append("a formula, not a table of rules. It cannot be edited rule by rule.");
+                    out.append("formula");
+                    anyFormula = true;
                     continue;
                 }
                 int rules = (int) BpmnDocument.childElements(table).stream()
                         .filter(child -> "rule".equals(child.getLocalName())).count();
-                List<String> columns = DecisionEditor.columnsOf(table);
-                out.append(rules).append(rules == 1 ? " rule" : " rules")
-                        .append(", looks at: ").append(String.join(", ", columns));
+                out.append(rules).append(rules == 1 ? " rule · " : " rules · ")
+                        .append(String.join(", ", DecisionEditor.columnsOf(table)));
+            }
+            if (anyFormula) {
+                out.append("\n\nA formula has no rules to edit. If a table tests its value, it "
+                        + "appears there as a column.");
             }
             return out.toString().trim();
         } catch (Exception e) {
@@ -275,7 +283,7 @@ public class DecisionWorkspace {
                     editor.setCell(working, decision, rule, column, expect, to);
             working = result.xml();
             edits.add(result.summary());
-            return afterChange(result.summary(), decision);
+            return afterChange(result.summary(), decision, false);
         } catch (IllegalArgumentException e) {
             return e.getMessage();
         } catch (Exception e) {
@@ -299,7 +307,7 @@ public class DecisionWorkspace {
                     editor.addRule(working, decision, conditions, outcomes);
             working = result.xml();
             edits.add(result.summary());
-            return afterChange(result.summary(), decision);
+            return afterChange(result.summary(), decision, true);
         } catch (IllegalArgumentException e) {
             return e.getMessage();
         } catch (Exception e) {
@@ -323,13 +331,22 @@ public class DecisionWorkspace {
      * without the model turn wrapped around them. On a CPU-bound machine, where a turn costs
      * far more than the tokens inside it, that trade gets better rather than worse.
      */
-    private String afterChange(String summary, String decision) {
+    private String afterChange(String summary, String decision, boolean renumbered) {
         String verdict = verdict();
-        String result = summary + "\n" + verdict + "\nThe table now reads:\n"
-                + showDecision(decision);
+        boolean passed = verdict.startsWith("All checks pass");
+        // The table comes back only when it is needed, which is not most of the time.
+        //
+        // A passing set_cell changes one value and renumbers nothing, and the summary already
+        // says which cell now holds what — so re-rendering fifteen rules to show one changed
+        // digit costs 522 tokens to repeat something the model was just told. A *failing* one
+        // is the opposite: the fix is almost always in the rule beside the one that moved, and
+        // the model cannot move a neighbour it cannot see. add_rule always renders, because
+        // appending a rule changes the numbering every later coordinate depends on.
+        String result = summary + "\n" + verdict
+                + (passed && !renumbered ? "" : "\nThe table now reads:\n" + showDecision(decision));
 
         String key = decision == null ? "" : decision.trim().toLowerCase(Locale.ROOT);
-        if (verdict.startsWith("All checks pass")) {
+        if (passed) {
             failures.remove(key);
             return result;
         }

@@ -261,7 +261,7 @@ to call is a classification and sampling variance on a classification is pure do
 
 ```bash
 cd backend
-./gradlew test                                                   # 202 tests
+./gradlew test                                                   # 205 tests
 ./gradlew bench -Pllm=ornith:9b                                  # score a model over 38 requests
 ./gradlew bench -Pllm=ornith:9b -Ponly=QUESTION                  # or one category, or one word
 ./gradlew focus -Pq="change the income risk category to high"    # what a request ranks to

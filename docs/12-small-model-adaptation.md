@@ -15,7 +15,7 @@ assumed. That combination decides more here than the parameter count does, and S
 the CPU settings table are written against it — including one place where it reverses advice an
 earlier draft gave.
 
-**Status.** All twelve items of Section 12 have landed. 202 tests pass, up from 183, and 36 of
+**Status.** All twelve items of Section 12 have landed. 205 tests pass, up from 183, and 36 of
 them are requests typed the way people type rather than the way developers write test fixtures.
 What is still unmeasured is the only thing a test cannot settle: whether a small model driving
 this loop gets the edit right. Section 11 is the instrument for that and it needs the slowest
@@ -394,36 +394,67 @@ it is the product.
 
 After Sections 4 through 6:
 
-**Measured after the work, not predicted:**
+**Measured after the work, not predicted.** These are *serialised* sizes — what the provider
+actually puts on the wire, JSON envelope included — because an earlier draft of this table
+counted string literals only and understated every row by about 40%:
 
 | | tokens |
 |---|---|
-| System prompt (`DECISION_TOOLS`) | **122** — was 1,105 |
-| QUESTION tool set — `list_decisions`, `show_decision`, `answer`, `panic` | 254 |
-| EDIT tool set — those, plus `set_cell`, `add_rule`, `done` | 459 |
-| Every tool, when the router abstains | 647 |
-| **QUESTION preamble** | **376** |
-| **EDIT preamble** | **581** |
-| Router prompt, paid once on its own turn | 55 |
-| Notation card, once, on the first table opened | ~50 |
+| System prompt (`DECISION_TOOLS`) | **101** |
+| QUESTION tool schemas — `list_decisions`, `show_decision`, `answer`, `panic` | 338 |
+| EDIT tool schemas — those, plus `set_cell`, `add_rule`, `done` | 640 |
+| **QUESTION preamble** | **439** |
+| **EDIT preamble** | **741** |
+| Router prompt, paid once on its own turn | 43 |
 
-Against a starting point of ~1,827. **A question now prefills 4.9× less than every request used
-to, and an edit 3.1× less.** On the 9B-dense CPU row that is roughly 100 seconds of turn-one
-prefill becoming 20.
+Measured the same way, the preamble before any of this was about **2,100**. So a question now
+prefills **4.8× less** and an edit **2.8× less**. On the 9B-dense CPU row that is roughly two
+minutes of turn-one prefill becoming twenty-five seconds.
 
 Most of the second pass came from deleting descriptions that were defending against bugs the code
 had since fixed. `set_cell`'s `expect` carried a paragraph explaining that the cell holds `>0.36`
 and not `DTI >0.36`, written when `gpt-oss:20b` got that wrong — but the editor now strips a
 leading column name before comparing, so the paragraph was arguing with a version of the harness
 that no longer exists. `add_rule` warned that an overlapping rule would be refused, which is what
-the auto-check returns anyway, in the gate's own words, at the moment it happens. Both are the
-same mistake: a prompt that keeps a note about a failure after the failure has been engineered
-out.
+the auto-check returns anyway, in the gate's own words, at the moment it happens. And ninety
+tokens went on teaching `done` against `answer`, a distinction Section 6's router settles a turn
+earlier and which the decoder can no longer even express, because a question's tool set does not
+contain `done`.
+
+### The preamble was never the expensive part
+
+Chasing it to 439 tokens was worth doing and it was not where the weight was. Measured on the
+lending model:
+
+| Tool result | tokens |
+|---|---|
+| `list_decisions`, 11 decisions | 227 → **157** |
+| `show_decision`, 3 rules | 93 |
+| `show_decision`, 15 rules | **522** |
+| `set_cell` that leaves a gap | 120 |
+| `set_cell` that passes | 120 → **25** |
+
+One `show_decision` on the fifteen-rule table costs more than the entire EDIT preamble. And the
+auto-check from Section 4 was re-rendering that table after **every** write, including the writes
+that changed one digit and broke nothing — 522 tokens to repeat what the summary had just said.
+
+So the render is now conditional on being useful. A failing write still returns the whole table,
+because the fix is almost always the rule beside the one that moved and the model cannot move
+what it cannot see. A passing write returns the summary and the verdict: **120 tokens to 25**, and
+about 560 to 25 on the wide table. `list_decisions` lost 70 tokens by saying "a formula has no
+rules to edit" once at the end instead of beside each of the five formulas in the file.
+
+A whole five-turn edit conversation, at its widest, is now **1,136 tokens** — about half of what
+the instructions alone used to cost.
+
+`ContextBudgetTest` holds all of it. Every number above is asserted with roughly a quarter of
+headroom, and the failure message asks the right question rather than the convenient one: what
+did the extra buy, and could a gate have done it instead?
 
 **What deliberately did not shrink**, because each is load-bearing and saying so is more useful
 than a smaller number:
 
-- **`panic`, 136 tokens, the largest schema in both sets.** Forty of those are the eight enum
+- **`panic`, the largest schema in both sets.** Forty of those are the eight enum
   values, which are the design rather than prose. Its "first ask whether this can be done by
   changing values" clause is paid even on questions, where it is useless, and it stays because
   the benchmark measured models *over*-refusing: `qwen3:14b` scored best of three on IMPOSSIBLE
@@ -718,7 +749,7 @@ from 183.
    Java. `Outcome.panicReason()` carries the code out for the benchmark, and a panic is recorded
    distinctly from a cap hit. The loop also asks for an ending with two turns left, which is the
    direct intervention against four silent cap hits in twenty.
-5. **The rewritten system prompt.** ✅ 1,105 tokens to **122**. Every paragraph went somewhere
+5. **The rewritten system prompt.** ✅ 1,105 tokens to **101**. Every paragraph went somewhere
    it cannot be skipped: "call show_decision before every set_cell" is a precondition in
    `DecisionWorkspace`; "call check after changing a boundary" is what a write returns; "write
    conditions in the table's notation" is a card attached to the first table opened; the refusal
@@ -749,7 +780,7 @@ from 183.
 
 ## Where it stands
 
-Everything above is mechanism, and mechanism is testable without a model: **202 tests, up from
+Everything above is mechanism, and mechanism is testable without a model: **205 tests, up from
 183**, of which 36 are requests typed the way people type. What none of it establishes is
 whether a 4B or a 9B can now drive the loop, because that is a question about a model and the
 only honest instrument for it is Section 11 run on the slowest machine in the fleet. A suite
