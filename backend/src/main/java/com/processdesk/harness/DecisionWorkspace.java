@@ -4,6 +4,7 @@ import org.w3c.dom.Element;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 
 /**
  * A decision model the assistant is working on, and the operations it may perform on it.
@@ -28,14 +29,34 @@ public class DecisionWorkspace {
     private final DecisionEditor editor;
     private final DecisionGates gates;
     private final List<String> edits = new ArrayList<>();
+    // Decisions the model has actually looked at. "Call show_decision before every set_cell"
+    // used to be a sentence in the prompt; a sentence is something a small model can skip and
+    // a guessed rule number is a wasted change. It is a precondition now.
+    private final java.util.Set<String> shown = new java.util.LinkedHashSet<>();
+    // The notation card is spent once per conversation. It is attached to the first table the
+    // model sees rather than carried in the system prompt, so a request that never opens a
+    // table never pays for it — and it arrives on the turn before the notation is needed.
+    private boolean notationSpent;
+    // How many times the checks have failed since a given decision was last written to. One
+    // failure is the ordinary half-finished boundary edit, which the loop recovers from by
+    // itself. Two is a model that has stopped making progress, and the only point at which a
+    // worked example is worth what it costs to prefill.
+    private final java.util.Map<String, Integer> failures = new java.util.HashMap<>();
+    private final DecisionExamples examples;
 
     private String working;
 
     public DecisionWorkspace(String xml, DecisionEditor editor, DecisionGates gates) {
+        this(xml, editor, gates, null);
+    }
+
+    public DecisionWorkspace(String xml, DecisionEditor editor, DecisionGates gates,
+                             DecisionExamples examples) {
         this.original = xml;
         this.working = xml;
         this.editor = editor;
         this.gates = gates;
+        this.examples = examples;
     }
 
     public String workingXml() {
@@ -112,6 +133,7 @@ public class DecisionWorkspace {
             }
 
             String actual = BpmnDocument.displayName(decision);
+            shown.add(actual.toLowerCase(java.util.Locale.ROOT));
             Element table = firstChild(decision, "decisionTable");
             if (table == null) {
                 // Saying what it is instead of showing nothing. A formula cannot be edited by
@@ -158,10 +180,83 @@ public class DecisionWorkspace {
                 }
                 out.append(String.join(", ", parts)).append(" → ").append(String.join(", ", results));
             }
-            return out.toString();
+            return out + cards(hitPolicy);
         } catch (Exception e) {
             return "I couldn't read that decision.";
         }
+    }
+
+    private boolean hasSeen(String decision) {
+        return decision != null
+                && shown.contains(decision.trim().toLowerCase(Locale.ROOT));
+    }
+
+    /**
+     * Refuses a write to a table the model has not looked at, and says what to do instead.
+     *
+     * <p>"Look before you change" was a paragraph of the system prompt, which is to say it was
+     * a request. The rule number and the cell's current value are both coordinates that only
+     * {@code show_decision} can supply, so a write that has not read is a guess — and
+     * {@code expect} turns a guess into a wasted turn rather than a wrong edit, which is safe
+     * but not free. Refusing it costs the same turn and returns something the model can act on.
+     *
+     * <p>Retryable, and the loop knows it: a refusal here is the one case where repeating the
+     * identical call after a {@code show_decision} is the correct next move, so the loop's
+     * repeat cutoff is cleared when a decision is shown.
+     */
+    private static String lookFirst(String decision) {
+        return "You haven't looked at \"" + decision + "\" yet. Call show_decision first — the "
+                + "rule number and the cell's current value both come from what it shows you, "
+                + "and guessing either one wastes the change.";
+    }
+
+    /**
+     * The two reference cards, attached to a table rather than carried in the system prompt.
+     *
+     * <p>Both were paragraphs of {@code DECISION_TOOLS}, which is prefilled on every turn of
+     * every conversation — a cost paid even by a request that never opens a table, and on a
+     * CPU-only machine a cost measured in seconds rather than tokens. Attached here they are
+     * paid once, by the requests that need them, on the turn before they are needed.
+     *
+     * <p>Neither is retrieved. The part of DMN that governs what this tool can write is small
+     * enough to write down, and an index that returns forty lines you could have pasted is the
+     * expensive way to get a worse copy of them.
+     */
+    private String cards(String hitPolicy) {
+        StringBuilder out = new StringBuilder();
+        if (!notationSpent) {
+            notationSpent = true;
+            out.append("""
+
+                    Notation:
+                      <=20      20 or less             >70       over 70
+                      [18..35]  18 to 35, both ends    (10..70]  over 10, up to and including 70
+                      "Poor"    a word, always quoted  -         this column does not matter\
+                    """);
+        }
+        // Rule order means nothing under UNIQUE and is priority under FIRST, which changes what
+        // a correct add_rule looks like. 229 of the 643 tables in corpora/ are not UNIQUE — too
+        // many to leave unsaid, too few to pay for on every request.
+        String policy = hitPolicy == null ? "" : hitPolicy.trim().toUpperCase(Locale.ROOT);
+        if (!policy.isBlank() && !"UNIQUE".equals(policy)) {
+            out.append("\n\n").append(switch (policy) {
+                case "FIRST" -> "Rule order is priority here: the first rule that matches wins, "
+                        + "so a new rule goes last and cannot change what an existing rule "
+                        + "already decides.";
+                case "PRIORITY" -> "Outcomes here are ranked, not ordered by rule. Which outcome "
+                        + "wins is decided by the order the output's allowed values are listed "
+                        + "in, not by where a rule sits.";
+                case "COLLECT" -> "This table gathers every rule that matches rather than "
+                        + "choosing one, so two rules covering the same value is normal here.";
+                case "ANY" -> "Rules here may overlap, but every overlapping rule has to produce "
+                        + "the same outcome.";
+                case "RULE ORDER", "OUTPUT ORDER" -> "This table returns every match, in order, "
+                        + "so rule order changes the answer.";
+                default -> "This table's hit policy is " + policy
+                        + ", so more than one rule may apply.";
+            });
+        }
+        return out.toString();
     }
 
     /**
@@ -172,12 +267,15 @@ public class DecisionWorkspace {
      * which half of its coordinate was wrong, which is enough for it to look again and retry.
      */
     public String setCell(String decision, int rule, String column, String expect, String to) {
+        if (!hasSeen(decision)) {
+            return lookFirst(decision);
+        }
         try {
             DecisionEditor.EditResult result =
                     editor.setCell(working, decision, rule, column, expect, to);
             working = result.xml();
             edits.add(result.summary());
-            return result.summary() + " Call check when the change is complete.";
+            return afterChange(result.summary(), decision);
         } catch (IllegalArgumentException e) {
             return e.getMessage();
         } catch (Exception e) {
@@ -193,17 +291,101 @@ public class DecisionWorkspace {
      * something {@code show_decision} already told it.
      */
     public String addRule(String decision, List<String> conditions, List<String> outcomes) {
+        if (!hasSeen(decision)) {
+            return lookFirst(decision);
+        }
         try {
             DecisionEditor.EditResult result =
                     editor.addRule(working, decision, conditions, outcomes);
             working = result.xml();
             edits.add(result.summary());
-            return result.summary() + " Call check to see whether it fits with the other rules.";
+            return afterChange(result.summary(), decision);
         } catch (IllegalArgumentException e) {
             return e.getMessage();
         } catch (Exception e) {
             return "That rule couldn't be added. Nothing was changed.";
         }
+    }
+
+    /**
+     * What every write returns: what was done, what it broke, and the table as it now stands.
+     *
+     * <p>Three of the eight turns on the documented success path existed only because
+     * verification and re-reading were the model's job — {@code set_cell, check, show_decision,
+     * set_cell}. Both are now consequences of writing, so the same self-correction happens in
+     * five turns instead of eight, and it happens whether or not the model remembered to ask.
+     *
+     * <p>The prompt used to carry this as an instruction ("Call check after changing a
+     * boundary"). An instruction is something a small model can skip. This is not.
+     *
+     * <p>The re-render is not free — a fifteen-rule table is a few hundred tokens on the next
+     * turn — but it is the same few hundred tokens a {@code show_decision} would have cost,
+     * without the model turn wrapped around them. On a CPU-bound machine, where a turn costs
+     * far more than the tokens inside it, that trade gets better rather than worse.
+     */
+    private String afterChange(String summary, String decision) {
+        String verdict = verdict();
+        String result = summary + "\n" + verdict + "\nThe table now reads:\n"
+                + showDecision(decision);
+
+        String key = decision == null ? "" : decision.trim().toLowerCase(Locale.ROOT);
+        if (verdict.startsWith("All checks pass")) {
+            failures.remove(key);
+            return result;
+        }
+        // Second failure on the same decision. The first is expected — moving one boundary
+        // leaves a hole beside it and the model fixes it next turn — so an example then would
+        // be paid for on almost every successful edit. Twice means the corrections are not
+        // converging, which is the only case where showing a table that gets it right is worth
+        // the seconds it costs to prefill.
+        if (failures.merge(key, 1, Integer::sum) == 2 && examples != null) {
+            return examples.like(decision, columnsOf(decision), hitPolicyOf(decision))
+                    .map(example -> result + "\n\n" + example)
+                    .orElse(result);
+        }
+        return result;
+    }
+
+    /** The open table's columns and hit policy, for ranking an example against it. */
+    private List<String> columnsOf(String decision) {
+        Element table = tableOf(decision);
+        return table == null ? List.of() : DecisionEditor.columnsOf(table);
+    }
+
+    private String hitPolicyOf(String decision) {
+        Element table = tableOf(decision);
+        return table == null ? "" : table.getAttribute("hitPolicy");
+    }
+
+    private Element tableOf(String decision) {
+        if (decision == null || decision.isBlank()) {
+            return null;
+        }
+        try {
+            return BpmnDocument.parse(working).elements("decision").stream()
+                    .filter(d -> BpmnDocument.displayName(d).equalsIgnoreCase(decision.trim()))
+                    .findFirst()
+                    .map(d -> firstChild(d, "decisionTable"))
+                    .orElse(null);
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    /** The gates' verdict on the working copy, without echoing the edits back. */
+    private String verdict() {
+        List<String> failures = gates.run(original, working).stream()
+                .filter(gate -> !gate.ok())
+                .map(GateResult::detail)
+                .filter(detail -> detail != null && !detail.isBlank())
+                .toList();
+        return failures.isEmpty()
+                ? "All checks pass."
+                // The gate's own wording already names the remedy — "moving one boundary
+                // usually means moving the one next to it" — so this only has to say who does
+                // it, and name the way out for a model that cannot.
+                : String.join("\n", failures)
+                        + "\nFix it with another set_cell, or call panic if you cannot.";
     }
 
     /**

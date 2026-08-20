@@ -26,6 +26,21 @@ class DecisionWorkspaceTest {
         return Files.readString(path);
     }
 
+    /**
+     * A workspace that has already looked at the decisions named.
+     *
+     * <p>Writing to a table the model has not opened is refused now — the rule number and the
+     * cell's current value are both coordinates only {@code show_decision} can supply, so a
+     * write that has not read is a guess. That used to be a sentence in the system prompt.
+     */
+    private DecisionWorkspace lookingAt(String... decisions) throws Exception {
+        DecisionWorkspace workspace = workspace();
+        for (String decision : decisions) {
+            workspace.showDecision(decision);
+        }
+        return workspace;
+    }
+
     private DecisionWorkspace workspace() throws Exception {
         return new DecisionWorkspace(loanModel(), editor, gates);
     }
@@ -72,7 +87,7 @@ class DecisionWorkspaceTest {
     @Test
     @DisplayName("a cell value that arrives with its column name still finds the cell")
     void theColumnPrefixIsTolerated() throws Exception {
-        DecisionWorkspace workspace = workspace();
+        DecisionWorkspace workspace = lookingAt("Affordability Category");
 
         // Exactly what the model sent: the whole rendered rule fragment, not the cell.
         String result = workspace.setCell("Affordability Category", 3, "DTI", "DTI <0.33", "<0.15");
@@ -85,7 +100,7 @@ class DecisionWorkspaceTest {
     @Test
     @DisplayName("a prefix that is not the column name is left alone")
     void onlyTheRealPrefixIsStripped() throws Exception {
-        DecisionWorkspace workspace = workspace();
+        DecisionWorkspace workspace = lookingAt("Affordability Category");
 
         // "DTIX" is not the column, so nothing may be stripped and the cell must not match.
         String result = workspace.setCell("Affordability Category", 3, "DTI", "DTIX <0.33", "<0.15");
@@ -107,7 +122,7 @@ class DecisionWorkspaceTest {
     @Test
     @DisplayName("two edits in one request, which one intent could never express")
     void editsAccumulate() throws Exception {
-        DecisionWorkspace workspace = workspace();
+        DecisionWorkspace workspace = lookingAt("Affordability Category");
 
         // "Please change the DTI for affordable to be < 0.15 and Marginal to be from 0.15 to
         // 0.36" — the request that started this. Two cells, so two calls.
@@ -121,7 +136,7 @@ class DecisionWorkspaceTest {
     @Test
     @DisplayName("check reports the gap a half-finished pair of edits leaves behind")
     void checkCatchesAnIncompleteEdit() throws Exception {
-        DecisionWorkspace workspace = workspace();
+        DecisionWorkspace workspace = lookingAt("Affordability Category");
 
         // Only the first half: Affordable moves down and nothing takes the range it vacated.
         workspace.setCell("Affordability Category", 3, "DTI", "<0.33", "<0.15");
@@ -144,7 +159,7 @@ class DecisionWorkspaceTest {
     @Test
     @DisplayName("a wrong coordinate is refused in words the model can correct from")
     void expectStillGuards() throws Exception {
-        DecisionWorkspace workspace = workspace();
+        DecisionWorkspace workspace = lookingAt("Affordability Category");
 
         String result = workspace.setCell("Affordability Category", 1, "DTI", "<0.33", "<0.15");
 
@@ -156,7 +171,7 @@ class DecisionWorkspaceTest {
     @Test
     @DisplayName("editing a formula is refused rather than half-done")
     void aFormulaCannotBeEdited() throws Exception {
-        DecisionWorkspace workspace = workspace();
+        DecisionWorkspace workspace = lookingAt("DTI");
 
         String result = workspace.setCell("DTI", 1, "outcome", "anything", "0.15");
 
@@ -167,7 +182,7 @@ class DecisionWorkspaceTest {
     @Test
     @DisplayName("a new rule can be added, which no phrasing could achieve before")
     void aRuleCanBeAdded() throws Exception {
-        DecisionWorkspace workspace = workspace();
+        DecisionWorkspace workspace = lookingAt("Affordability Category");
 
         // "Add a new criteria for DTI between 0.36 and 0.5 called Poor" — the request that had
         // no operation behind it, so every wording of it failed.
@@ -189,7 +204,7 @@ class DecisionWorkspaceTest {
     @Test
     @DisplayName("a new rule takes the quoting the column already uses")
     void quotingIsInferredFromTheColumn() throws Exception {
-        DecisionWorkspace workspace = workspace();
+        DecisionWorkspace workspace = lookingAt("Affordability Category");
 
         workspace.setCell("Affordability Category", 1, "DTI", ">0.36", ">0.5");
         workspace.addRule("Affordability Category",
@@ -210,7 +225,7 @@ class DecisionWorkspaceTest {
     @Test
     @DisplayName("a rule with the wrong number of conditions is refused, not padded")
     void theShapeIsEnforced() throws Exception {
-        DecisionWorkspace workspace = workspace();
+        DecisionWorkspace workspace = lookingAt("Loan Recommendation");
 
         String result = workspace.addRule("Loan Recommendation",
                 java.util.List.of("\"Low\""), java.util.List.of("\"Approve\""));
@@ -223,7 +238,7 @@ class DecisionWorkspaceTest {
     @Test
     @DisplayName("a rule that overlaps an existing one is added, then caught by check")
     void anOverlappingRuleIsCaught() throws Exception {
-        DecisionWorkspace workspace = workspace();
+        DecisionWorkspace workspace = lookingAt("Affordability Category");
 
         // Deliberately careless: [0.2..0.3] sits inside the existing <0.33 "Affordable" rule.
         workspace.addRule("Affordability Category",
@@ -237,7 +252,7 @@ class DecisionWorkspaceTest {
     @Test
     @DisplayName("a rule cannot be added to a formula")
     void aFormulaTakesNoRules() throws Exception {
-        DecisionWorkspace workspace = workspace();
+        DecisionWorkspace workspace = lookingAt("DTI");
 
         String result = workspace.addRule("DTI", java.util.List.of("x"), java.util.List.of("y"));
 
@@ -351,6 +366,7 @@ class DecisionWorkspaceTest {
         String before = loanModel();
         DecisionWorkspace workspace = new DecisionWorkspace(before, editor, gates);
 
+        workspace.showDecision("Affordability Category");
         workspace.setCell("Affordability Category", 3, "DTI", "<0.33", "<0.15");
 
         assertNotEquals(before, workspace.workingXml());

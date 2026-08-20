@@ -19,8 +19,12 @@ public interface AiProvider {
     String name();
 
     /**
-     * Calls made today, for providers that are metered. Empty when nothing is being spent —
-     * a local model has no budget to report, and inventing one would be noise.
+     * What this provider has spent, in whatever currency it actually costs.
+     *
+     * <p>For a metered provider that is calls against a daily quota. For a local one on a CPU
+     * it is prefill: tokens read and the seconds spent reading them, which is the resource that
+     * runs out on the hardware this is aimed at. Empty when there is nothing to report, because
+     * inventing a budget would be noise.
      */
     default java.util.Map<String, Object> usage() {
         return java.util.Map.of();
@@ -53,6 +57,33 @@ public interface AiProvider {
      */
     default boolean supportsTools() {
         return false;
+    }
+
+    /**
+     * What kind of request this is, decided before any tool schema is loaded.
+     *
+     * <p>{@code UNKNOWN} is the honest default and the safe one: it means "load everything",
+     * which is what this loop did before routing existed. A provider that cannot classify
+     * cheaply should keep it.
+     */
+    enum Reading { QUESTION, EDIT, UNKNOWN }
+
+    /**
+     * Reads the request as a question, a change, or neither, in one cheap constrained call.
+     *
+     * <p>Worth a turn because of what it buys. The benchmark's own categories say every model
+     * scored 12/12 on QUESTION and lost everything it lost on EDIT, so a question should not be
+     * paying for the write tools — not in prefill, and not in the chance of reaching for one.
+     * Nine tools become four. Fewer legal options is the most reliable thing that can be done
+     * for a small model's tool choice, and this project has the evidence for why: zero unknown
+     * tool calls across sixty benchmark requests, because constrained decoding means the model
+     * can only ever choose wrongly among the options it was given.
+     *
+     * <p>Getting it wrong is cheap. {@link DecisionToolLoop} widens the set the moment the model
+     * asks for a real tool that was not advertised, and runs the call anyway.
+     */
+    default Reading classify(String request) {
+        return Reading.UNKNOWN;
     }
 
     /**
