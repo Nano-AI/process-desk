@@ -18,9 +18,14 @@ processdesk:
   assets-dir: ./assets
   audit-file: ./audit.log
 
-  # "dummy" answers from the file itself; "ollama" runs the local model; "gemini" calls
-  # the hosted API. Switching this changes what the system understands, not how it edits
-  # or validates — every provider goes through the same gates and the same editors.
+  # "ollama" runs the local model and is what this is now aimed at — laptops and servers
+  # short on CPU compute, nothing leaving the machine. "dummy" answers from the file itself
+  # and stays the default only because it needs nothing installed, which is what makes a
+  # fresh clone work. "gemini" is no longer a target; the class is kept because the provider
+  # seam is what makes two models comparable, not because the hosted one is coming back.
+  #
+  # Switching this changes what the system understands, not how it edits or validates —
+  # every provider goes through the same gates and the same editors.
   # Set AI_PROVIDER in .env to change it without editing this file.
   ai-provider: ${AI_PROVIDER:dummy}
 
@@ -39,11 +44,32 @@ processdesk:
     # changes and the proposal was withheld for the overlap the other would have fixed.
     max-turns: ${TOOL_LOOP_MAX_TURNS:12}
 
+  # Worked examples, fetched only when a decision's coverage check has failed twice — which is
+  # a model whose corrections have stopped converging, and the only state where a few hundred
+  # tokens of somebody else's table is worth the seconds it costs to prefill.
+  #
+  # The corpus is the DMN Technology Compatibility Kit: models the specification says must
+  # produce particular answers, which is the one body of DMN here that is known correct rather
+  # than merely real. It is gitignored and rebuilt by scripts/fetch-corpora.sh, so a clone that
+  # has never run that script has no examples and behaves exactly as it did before. Indexing is
+  # lazy and skipped entirely when the directory is absent.
+  examples:
+    dir: ${EXAMPLES_DIR:../corpora/dmn-tck}
+    enabled: ${EXAMPLES_ENABLED:true}
+
   ollama:
     base-url: ${OLLAMA_BASE_URL:http://localhost:11434}
-    model: ${OLLAMA_MODEL:ornith:9b}
-    # Ollama defaults to 4096, which silently truncates. The prompt is a projection
-    # rather than a file, so 8192 is generous.
+    # gpt-oss:20b is the only local model benchmarked end to end here (17/20) and is a
+    # mixture-of-experts with 3.6B active, which is what both prefill and generation are
+    # actually charged for. On a CPU-only machine that matters more than it does on a GPU.
+    model: ${OLLAMA_MODEL:gpt-oss:20b}
+    # Ollama defaults to 4096, which silently truncates.
+    #
+    # An earlier plan was to cut this to 4096 now that the preamble is a third of what it was.
+    # That is no longer safe: every write returns the re-rendered table, so a conversation is
+    # shorter in turns and fatter per turn, and a four-edit run on a fifteen-rule table can
+    # pass 3,000 tokens. Memory is the resource this deployment has; context is where to spend
+    # it. Set OLLAMA_KV_CACHE_TYPE=q8_0 on the server if the KV cache is the thing that hurts.
     num-ctx: 8192
     # Zero, not 0.1, for the same reason Gemini is at zero: choosing which tool to call and
     # which rule number to name is classification, and sampling variance on a classification
@@ -55,8 +81,25 @@ processdesk:
     # ornith is a reasoning model; its private reasoning costs time and is never read.
     # Measured here: 9s with thinking off against 25s with it on, same answers.
     think: false
-    # Generous enough to cover the first request, which loads the model.
-    timeout-seconds: 120
+    # Ollama's default is unbounded generation, which is how "explain this file" became a
+    # crash: a 14B at ~11 tok/s reaches the 120s client timeout at roughly 1,300 tokens, and
+    # the failure is reported as "I couldn't reach the local model" about a model that was
+    # answering the whole time. A reply that stops mid-sentence is a visible fault; one that
+    # never stops is misdiagnosed as a network error.
+    #
+    # Two budgets, because the risk is not the same. A schema already bounds a structured
+    # reply, so 512 is headroom for a tool call plus whatever prose comes with it. Prose has
+    # no such bound, and EXPLAIN asks for one sentence and three short bullets — 200 tokens
+    # is generous for that and short enough to fail fast when the model ignores the shape.
+    num-predict: 512
+    num-predict-prose: 200
+    # Generous enough to cover the first request, which loads the model — and on a CPU-only
+    # machine that is a long way from generous at 120 seconds. Loading 13 GB from disk and then
+    # prefilling a couple of thousand tokens at 15-25 tok/s can pass two minutes before the
+    # model has done anything wrong, and what the user is shown for it is "I couldn't reach the
+    # local model" about a model that was working. Spring's request-timeout above was already
+    # sized for that; only the HTTP client was not.
+    timeout-seconds: ${OLLAMA_TIMEOUT_SECONDS:600}
 
   gemini:
     base-url: https://generativelanguage.googleapis.com/v1beta

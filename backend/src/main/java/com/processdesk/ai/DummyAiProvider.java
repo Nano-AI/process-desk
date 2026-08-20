@@ -76,7 +76,7 @@ public class DummyAiProvider implements AiProvider {
     @Override
     public EditIntent interpretDecision(String request, DecisionProjection decision) {
         return EditIntent.none("Connect a model to change decision rules — "
-                + "set AI_PROVIDER in .env to ollama or gemini.");
+                + "set AI_PROVIDER in .env to ollama.");
     }
 
     @Override
