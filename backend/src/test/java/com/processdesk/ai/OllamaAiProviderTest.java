@@ -18,7 +18,7 @@ class OllamaAiProviderTest {
 
     private OllamaAiProvider unreachableProvider() {
         return new OllamaAiProvider("http://localhost:1", "unreachable", 8192, 0.1, "30m", false,
-                512, 200, 1);
+                -1, -1, -1, 512, 200, 1);
     }
 
     @Test

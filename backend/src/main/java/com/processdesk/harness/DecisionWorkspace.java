@@ -106,7 +106,11 @@ public class DecisionWorkspace {
                 }
                 int rules = (int) BpmnDocument.childElements(table).stream()
                         .filter(child -> "rule".equals(child.getLocalName())).count();
-                out.append(rules).append(rules == 1 ? " rule · " : " rules · ")
+                // "looks at:" earns its three tokens. Without it the line reads as a list of
+                // peers separated by a dot, and ornith:9b called show_decision("Refund Amount")
+                // — a column — before finding the decision that tests it. The label is what
+                // says which of these names is a thing you can open.
+                out.append(rules).append(rules == 1 ? " rule, looks at: " : " rules, looks at: ")
                         .append(String.join(", ", DecisionEditor.columnsOf(table)));
             }
             if (anyFormula) {

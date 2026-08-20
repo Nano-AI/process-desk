@@ -63,42 +63,70 @@ processdesk:
     # mixture-of-experts with 3.6B active, which is what both prefill and generation are
     # actually charged for. On a CPU-only machine that matters more than it does on a GPU.
     model: ${OLLAMA_MODEL:gpt-oss:20b}
+
+    # Private reasoning is tokens paid for and never read. Measured here on ornith:9b, the same
+    # request producing the same tool call: 15 generated tokens with thinking off against 52
+    # with it on, 0.85s against 3.25s. The schema is the thinking.
+    #
+    # A model with no thinking to disable answers 400 to this option. The provider notices,
+    # drops it, and retries once, so an unusual model costs one refusal per run rather than
+    # every request.
+    think: ${OLLAMA_THINK:false}
+
     # Ollama defaults to 4096, which silently truncates.
     #
-    # An earlier plan was to cut this to 4096 now that the preamble is a third of what it was.
-    # That is no longer safe: every write returns the re-rendered table, so a conversation is
-    # shorter in turns and fatter per turn, and a four-edit run on a fifteen-rule table can
-    # pass 3,000 tokens. Memory is the resource this deployment has; context is where to spend
-    # it. Set OLLAMA_KV_CACHE_TYPE=q8_0 on the server if the KV cache is the thing that hurts.
-    num-ctx: 8192
-    # Zero, not 0.1, for the same reason Gemini is at zero: choosing which tool to call and
-    # which rule number to name is classification, and sampling variance on a classification
-    # is pure downside. Measured here on the same two-part DTI request — at 0.1 one run made
-    # both edits and self-corrected, and the next made one and ran out of turns.
-    temperature: 0
-    # Without this the model unloads after 5 minutes and the next request pays to reload.
-    keep-alive: 30m
-    # ornith is a reasoning model; its private reasoning costs time and is never read.
-    # Measured here: 9s with thinking off against 25s with it on, same answers.
-    think: false
-    # Ollama's default is unbounded generation, which is how "explain this file" became a
-    # crash: a 14B at ~11 tok/s reaches the 120s client timeout at roughly 1,300 tokens, and
-    # the failure is reported as "I couldn't reach the local model" about a model that was
-    # answering the whole time. A reply that stops mid-sentence is a visible fault; one that
-    # never stops is misdiagnosed as a network error.
+    # An earlier plan was to cut this to 4096 now that the preamble is a fifth of what it was.
+    # That is no longer safe: a failing write returns the re-rendered table, so a conversation
+    # is shorter in turns and fatter per turn. Memory is the resource this deployment has;
+    # context is where to spend it. Set OLLAMA_KV_CACHE_TYPE=q8_0 on the server if the KV cache
+    # is what hurts.
+    num-ctx: ${OLLAMA_NUM_CTX:8192}
+
+    # Zero, not 0.1. Choosing which tool to call and which rule number to name is classification,
+    # and sampling variance on a classification is pure downside. Measured here on the two-part
+    # DTI request: at 0.1 one run made both edits and self-corrected, and the next made one and
+    # ran out of turns.
+    temperature: ${OLLAMA_TEMPERATURE:0}
+
+    # Without this the model unloads after 5 minutes and the next request pays to reload it.
+    # On a server, -1 never unloads, which is worth it: loading 13-24 GB is a cold start nobody
+    # is waiting through, and it happens silently.
+    keep-alive: ${OLLAMA_KEEP_ALIVE:30m}
+
+    # Ollama's default is unbounded generation, which is how "explain this file" became a crash:
+    # a 14B at ~11 tok/s reaches the client timeout at roughly 1,300 tokens, and the failure is
+    # reported as "I couldn't reach the local model" about a model that was answering the whole
+    # time. A reply that stops mid-sentence is a visible fault; one that never stops is
+    # misdiagnosed as a network error.
     #
-    # Two budgets, because the risk is not the same. A schema already bounds a structured
-    # reply, so 512 is headroom for a tool call plus whatever prose comes with it. Prose has
-    # no such bound, and EXPLAIN asks for one sentence and three short bullets — 200 tokens
-    # is generous for that and short enough to fail fast when the model ignores the shape.
-    num-predict: 512
-    num-predict-prose: 200
+    # Two budgets, because the risk is not the same. A schema already bounds a structured reply,
+    # so 512 is headroom. Prose has no such bound, and EXPLAIN asks for one sentence and three
+    # short bullets.
+    num-predict: ${OLLAMA_NUM_PREDICT:512}
+    num-predict-prose: ${OLLAMA_NUM_PREDICT_PROSE:200}
+
+    # --- CPU tuning. Unset by default, and sent to Ollama only when set. -------------------
+    # Ollama picks these from the machine and is usually right. They are here for the machine
+    # where it is not, and every one of them is a measurement to take rather than a value to
+    # guess. See docs/12-small-model-adaptation.md for what each one does on a CPU.
+    #
+    # num-batch   prefill batch size, default 512. Prefill on a CPU is compute bound, and a
+    #             larger batch raises arithmetic intensity, which is exactly what that wants.
+    #             It costs memory, which this deployment has. 1024 and 2048 are worth measuring.
+    # num-thread  defaults to physical cores. On a many-core server prefill scales with threads
+    #             until memory bandwidth saturates; on a laptop, going past physical cores makes
+    #             it worse.
+    # num-gpu     layers to offload. 0 pins the model to the CPU, which on a box with a weak
+    #             iGPU can be faster than partial offload and is easier to reason about.
+    num-batch: ${OLLAMA_NUM_BATCH:-1}
+    num-thread: ${OLLAMA_NUM_THREAD:-1}
+    num-gpu: ${OLLAMA_NUM_GPU:-1}
+
     # Generous enough to cover the first request, which loads the model — and on a CPU-only
     # machine that is a long way from generous at 120 seconds. Loading 13 GB from disk and then
     # prefilling a couple of thousand tokens at 15-25 tok/s can pass two minutes before the
     # model has done anything wrong, and what the user is shown for it is "I couldn't reach the
-    # local model" about a model that was working. Spring's request-timeout above was already
-    # sized for that; only the HTTP client was not.
+    # local model" about a model that was working.
     timeout-seconds: ${OLLAMA_TIMEOUT_SECONDS:600}
 
   gemini:

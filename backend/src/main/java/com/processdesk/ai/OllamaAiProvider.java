@@ -51,6 +51,9 @@ public class OllamaAiProvider implements AiProvider {
     private final double temperature;
     private final String keepAlive;
     private final boolean think;
+    private final int numBatch;
+    private final int numThread;
+    private final int numGpu;
     private final int numPredict;
     private final int numPredictProse;
     private final Duration timeout;
@@ -73,6 +76,9 @@ public class OllamaAiProvider implements AiProvider {
             @Value("${processdesk.ollama.temperature:0.1}") double temperature,
             @Value("${processdesk.ollama.keep-alive:30m}") String keepAlive,
             @Value("${processdesk.ollama.think:false}") boolean think,
+            @Value("${processdesk.ollama.num-batch:-1}") int numBatch,
+            @Value("${processdesk.ollama.num-thread:-1}") int numThread,
+            @Value("${processdesk.ollama.num-gpu:-1}") int numGpu,
             @Value("${processdesk.ollama.num-predict:512}") int numPredict,
             @Value("${processdesk.ollama.num-predict-prose:200}") int numPredictProse,
             @Value("${processdesk.ollama.timeout-seconds:600}") int timeoutSeconds) {
@@ -82,6 +88,9 @@ public class OllamaAiProvider implements AiProvider {
         this.temperature = temperature;
         this.keepAlive = keepAlive;
         this.think = think;
+        this.numBatch = numBatch;
+        this.numThread = numThread;
+        this.numGpu = numGpu;
         this.numPredict = numPredict;
         this.numPredictProse = numPredictProse;
         this.timeout = Duration.ofSeconds(timeoutSeconds);
@@ -213,27 +222,18 @@ public class OllamaAiProvider implements AiProvider {
                 messages.add(toOllama(message));
             }
 
-            Map<String, Object> options = new LinkedHashMap<>();
-            options.put("temperature", temperature);
-            options.put("num_ctx", numCtx);
-            options.put("num_predict", numPredict);
-
             Map<String, Object> body = new LinkedHashMap<>();
             body.put("model", model);
             body.put("messages", messages);
             body.put("tools", tools.stream().map(OllamaAiProvider::toOllama).toList());
             body.put("stream", false);
             body.put("keep_alive", keepAlive);
-            body.put("think", think);
-            body.put("options", options);
+            if (!thinkRejected) {
+                body.put("think", think);
+            }
+            body.put("options", options(numPredict));
 
-            HttpRequest httpRequest = HttpRequest.newBuilder(URI.create(baseUrl + "/api/chat"))
-                    .timeout(timeout)
-                    .header("Content-Type", "application/json")
-                    .POST(HttpRequest.BodyPublishers.ofString(mapper.writeValueAsString(body)))
-                    .build();
-
-            HttpResponse<String> response = http.send(httpRequest, HttpResponse.BodyHandlers.ofString());
+            HttpResponse<String> response = send(body);
             if (response.statusCode() != 200) {
                 throw new IllegalStateException(
                         "Ollama returned " + response.statusCode() + ": " + response.body());
@@ -299,6 +299,65 @@ public class OllamaAiProvider implements AiProvider {
         return nanos <= 0 ? 0 : Math.round(tokens * 1_000_000_000.0 / nanos * 10) / 10.0;
     }
 
+    /**
+     * The generation options, built once so the two call paths cannot drift.
+     *
+     * <p>{@code num_batch}, {@code num_thread} and {@code num_gpu} are sent only when set,
+     * because Ollama's own defaults are chosen from the machine and are usually right. They are
+     * here for the machine where they are not: prefill on a CPU is compute bound, so batch size
+     * is the one setting that raises arithmetic intensity, and a box with a weak iGPU can be
+     * slower with partial offload than with {@code num_gpu: 0} and no offload at all. Both are
+     * measurements to take rather than values to guess, which is why neither has a default.
+     */
+    private Map<String, Object> options(int predict) {
+        Map<String, Object> options = new LinkedHashMap<>();
+        options.put("temperature", temperature);
+        options.put("num_ctx", numCtx);
+        options.put("num_predict", predict);
+        if (numBatch > 0) {
+            options.put("num_batch", numBatch);
+        }
+        if (numThread > 0) {
+            options.put("num_thread", numThread);
+        }
+        if (numGpu >= 0) {
+            options.put("num_gpu", numGpu);
+        }
+        return options;
+    }
+
+    /**
+     * Posts a chat body, and stops asking for thinking if this model has no such thing.
+     *
+     * <p>Not every model accepts {@code think}. One that does not answers 400, and the request
+     * fails for a reason that has nothing to do with what was asked. The same shape of problem
+     * as Gemini's {@code thinkingConfig}, handled the same way: drop it, retry once, and
+     * remember, so the refusal is paid for once per run rather than once per request.
+     */
+    private HttpResponse<String> send(Map<String, Object> body) throws Exception {
+        HttpResponse<String> response = post(body);
+        if (response.statusCode() == 400 && body.containsKey("think") && !thinkRejected) {
+            log.info("{} does not accept the think option; dropping it for the rest of this run",
+                    model);
+            thinkRejected = true;
+            body.remove("think");
+            response = post(body);
+        }
+        return response;
+    }
+
+    private HttpResponse<String> post(Map<String, Object> body) throws Exception {
+        HttpRequest request = HttpRequest.newBuilder(URI.create(baseUrl + "/api/chat"))
+                .timeout(timeout)
+                .header("Content-Type", "application/json")
+                .POST(HttpRequest.BodyPublishers.ofString(mapper.writeValueAsString(body)))
+                .build();
+        return http.send(request, HttpResponse.BodyHandlers.ofString());
+    }
+
+    /** Set once this model has refused {@code think}, so it is asked for at most once. */
+    private volatile boolean thinkRejected;
+
     private static Map<String, Object> toOllama(Tools.Spec spec) {
         return Map.of("type", "function", "function", Map.of(
                 "name", spec.name(),
@@ -328,12 +387,9 @@ public class OllamaAiProvider implements AiProvider {
 
     /** One non-streaming chat turn. {@code schema} constrains generation when present. */
     private String chat(String system, String user, Map<String, Object> schema) throws Exception {
-        Map<String, Object> options = new LinkedHashMap<>();
-        options.put("temperature", temperature);
-        options.put("num_ctx", numCtx);
         // Prose gets the tighter cap. A schema already bounds how long a reply can be; a
         // question like "explain this file" bounds nothing, and Ollama's default is unlimited.
-        options.put("num_predict", schema == null ? numPredictProse : numPredict);
+        Map<String, Object> options = options(schema == null ? numPredictProse : numPredict);
 
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("model", model);
@@ -342,22 +398,18 @@ public class OllamaAiProvider implements AiProvider {
                 Map.of("role", "user", "content", user)));
         body.put("stream", false);
         body.put("keep_alive", keepAlive);
-        // ornith is a reasoning model. Its private reasoning is tokens we pay for and never
-        // read: measured on this machine, leaving it on roughly tripled the time to a
-        // decision (25s against 9s) without changing the answer. The schema is the thinking.
-        body.put("think", think);
+        // Private reasoning is tokens paid for and never read. Measured here on ornith:9b, the
+        // same request producing the same tool call: 15 generated tokens with thinking off
+        // against 52 with it on, 0.85s against 3.25s. The schema is the thinking.
+        if (!thinkRejected) {
+            body.put("think", think);
+        }
         body.put("options", options);
         if (schema != null) {
             body.put("format", schema);
         }
 
-        HttpRequest httpRequest = HttpRequest.newBuilder(URI.create(baseUrl + "/api/chat"))
-                .timeout(timeout)
-                .header("Content-Type", "application/json")
-                .POST(HttpRequest.BodyPublishers.ofString(mapper.writeValueAsString(body)))
-                .build();
-
-        HttpResponse<String> response = http.send(httpRequest, HttpResponse.BodyHandlers.ofString());
+        HttpResponse<String> response = send(body);
         if (response.statusCode() != 200) {
             throw new IllegalStateException("Ollama returned " + response.statusCode() + ": " + response.body());
         }

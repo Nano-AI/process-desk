@@ -662,6 +662,59 @@ The harness does not change. The editor still writes the XML, `expect` still ref
 holding something else, and the four gates still decide what may be offered to a human. What
 changes is that fewer of the loop's invariants are sentences a model has to remember.
 
+## 10b. What a real model found that the tests could not
+
+Everything above was measured statically. Running one request through `ornith:9b` — a 9B
+Qwen3.5-family model at Q4_K_M, which is the "7B-class" slot the proposal asks for — found three
+things in an afternoon that 205 passing tests did not.
+
+**Thinking is worth turning off, and now there is a number.** The same request, producing the
+same tool call:
+
+| | reasoning emitted | generated | time |
+|---|---|---|---|
+| `think: false` | none | 15 tokens | 0.85s |
+| `think: true` | 155 characters | 52 tokens | 3.25s |
+
+Three and a half times the tokens for an identical answer. Every Ollama setting is now an
+environment variable, `OLLAMA_THINK` included, and a model with no thinking to disable answers
+400 to the option — so the provider drops it and retries once, the same way it already handles
+Gemini refusing `thinkingConfig`.
+
+**Compressing `list_decisions` broke it, and only a model noticed.** Section 8 cut the listing
+from 227 tokens to 157, partly by rendering each line as
+`Approval Route · 3 rules · Refund Amount, Member Tier`. Three names separated by a dot read as
+three peers, so the model called `show_decision("Refund Amount")` — a column — and spent a turn
+finding out it was not a decision. Restoring the two words `looks at:` costs about eighteen
+tokens across a file and removes the ambiguity. The offline suite could not have caught this: it
+checks which tools a request loads and what a refusal reads like, not whether a tool's output
+means what it appears to mean.
+
+**A required argument is not required.** Ollama constrains which tool the model may call, at the
+decoder, which is why sixty benchmark requests produced zero invented tools. It does not
+constrain the arguments to be complete. `ornith:9b` read the table correctly over two turns and
+then emitted `{"name": "answer", "arguments": {}}` — a correct decision to finish, with nothing
+in it. The loop took the blank as "said nothing" and replaced a correct conversation with a
+fallback sentence. It now asks once for the text and takes the second reply at face value.
+
+That fallback was wrong in its own right. A question that ends without an answer was being told
+*"I couldn't work out which rule you meant"*, which is edit-shaped language for something nobody
+asked to edit. The router already knows which kind of request it is, so the sentence now depends
+on it.
+
+**End to end, on the same request, before and after:**
+
+| | prefill | wall clock | outcome |
+|---|---|---|---|
+| before | 13,799 tokens | 110s | 12-turn cap, no answer |
+| after | 3,796 tokens | ~19s | the right answer, from the file |
+
+The two-part DTI edit runs in six turns on the same model and passes all four gates.
+
+One thing the run did not fix: the answer named "Rule 1" out loud, which `answer`'s own
+description tells it not to do. Prose instructions with no mechanism behind them are exactly the
+kind this document argues you cannot rely on, and this is one of the few left.
+
 ## 11. What to measure
 
 Keep the twenty requests and the per-category scoring in `Benchmark.java`. Scoring by category is

@@ -55,7 +55,9 @@ class DecisionWorkspaceTest {
         // from a table with no rules, and the model picked it and correctly reported that it
         // had no rules to change.
         assertTrue(listing.contains("DTI · formula"), listing);
-        assertTrue(listing.contains("Affordability Category · 3 rules · DTI"),
+        // "looks at:" is what says which of these names can be opened and which is a column.
+        // Without it ornith:9b called show_decision on a column name and lost a turn to it.
+        assertTrue(listing.contains("Affordability Category · 3 rules, looks at: DTI"),
                 "the listing has to show that a different decision tests DTI as a column");
         // Said once at the end rather than beside each of the five formulas in this file.
         assertEquals(1, listing.split("A formula has no rules to edit", -1).length - 1, listing);

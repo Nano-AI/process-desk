@@ -146,7 +146,7 @@ public final class Benchmark {
 
         OllamaAiProvider provider = new OllamaAiProvider(
                 System.getProperty("bench.url", "http://localhost:11434"),
-                model, 16384, 0, "30m", false, 512, 200, 300);
+                model, 16384, 0, "30m", false, -1, -1, -1, 512, 200, 300);
         DecisionToolLoop loop = new DecisionToolLoop(
                 provider, new DecisionEditor(), new DecisionGates(), maxTurns);
 

@@ -303,6 +303,7 @@ public class DecisionToolLoop {
         // only once, because a refusal it cannot satisfy would spend the rest of the turns
         // arriving at the same place the gates were going to put it anyway.
         boolean doneRefused = false;
+        boolean answerRetried = false;
         int turn = 0;
 
         while (turn < maxTurns) {
@@ -322,8 +323,8 @@ public class DecisionToolLoop {
                 // already decided not to make — small models do this constantly, and looping
                 // on it burns turns to reach the same place.
                 String text = reply.text() == null ? "" : reply.text().trim();
-                return finish(workspace, text.isEmpty() ? null : text, turn, called, false)
-                        .readAs(reading);
+                return finish(workspace, text.isEmpty() ? null : text, turn, called, false,
+                        reading).readAs(reading);
             }
 
             conversation.add(Tools.Message.assistant(reply.text(), reply.calls()));
@@ -383,7 +384,23 @@ public class DecisionToolLoop {
                 }
 
                 if ("answer".equals(call.name())) {
-                    closing = call.text("text");
+                    String text = call.text("text");
+                    // A required argument is not enforced. Ollama constrains the *choice* of
+                    // tool at the decoder but not the completeness of its arguments, so a small
+                    // model can call answer with {} — measured on ornith:9b, which read the
+                    // table correctly over two turns and then produced
+                    // {"name":"answer","arguments":{}}. Ending there discards a correct
+                    // conversation and shows the person a fallback sentence instead of the
+                    // answer it was about to give. Asked once, then taken at face value.
+                    if (text.isBlank() && !answerRetried) {
+                        answerRetried = true;
+                        log.debug("answer arrived with no text; asking once");
+                        conversation.add(Tools.Message.tool("answer",
+                                "That call had no text in it, so nothing was said. Call answer "
+                                        + "again with the answer itself in \"text\"."));
+                        break;
+                    }
+                    closing = text;
                     finishing = true;
                     break;
                 }
@@ -410,8 +427,8 @@ public class DecisionToolLoop {
             }
 
             if (finishing) {
-                return finish(workspace, closing.isBlank() ? null : closing, turn, called, false)
-                        .readAs(reading);
+                return finish(workspace, closing.isBlank() ? null : closing, turn, called, false,
+                        reading).readAs(reading);
             }
 
             // Two turns left. A cap hit that says nothing is the worst outcome this loop has —
@@ -428,17 +445,25 @@ public class DecisionToolLoop {
         // reason. A silent cap is the worst outcome of a loop and the one worth naming.
         log.info("tool loop hit its {}-turn cap", maxTurns);
         return (workspace.changed()
-                ? finish(workspace, null, turn, called, true)
-                : Outcome.declined("I couldn't work out how to make that change.", turn, called, true))
+                ? finish(workspace, null, turn, called, true, reading)
+                : Outcome.declined(reading == AiProvider.Reading.QUESTION
+                        ? "I couldn't work that out from this file."
+                        : "I couldn't work out how to make that change.", turn, called, true))
                 .readAs(reading);
     }
 
     /** Runs the gates one last time and turns the workspace into something the UI can show. */
     private Outcome finish(DecisionWorkspace workspace, String closing, int turns,
-                           List<String> called, boolean hitCap) {
+                           List<String> called, boolean hitCap, AiProvider.Reading reading) {
         if (!workspace.changed()) {
-            return Outcome.answered(closing == null
-                    ? "I couldn't work out which rule you meant." : closing, turns, called);
+            // A model that stops without saying anything still owes the person a sentence, and
+            // which sentence depends on what they asked for. "I couldn't work out which rule
+            // you meant" is edit-shaped, and ornith:9b produced it in reply to "why would a $30
+            // refund be automatic?" after four turns spent reading the rules correctly.
+            String fallback = reading == AiProvider.Reading.QUESTION
+                    ? "I couldn't find an answer to that in this file."
+                    : "I couldn't work out which rule you meant.";
+            return Outcome.answered(closing == null ? fallback : closing, turns, called);
         }
 
         List<GateResult> checked = workspace.gates();

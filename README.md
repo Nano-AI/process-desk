@@ -244,6 +244,13 @@ offered as an edit.
 `.env` at the project root, gitignored, loaded into `bootRun` by `backend/build.gradle`. Start
 from `.env.example`.
 
+Every Ollama setting is an environment variable, and `.env.example` lists them with what each
+one costs. The ones worth knowing about: `OLLAMA_THINK=false` keeps private reasoning off
+(measured on a 9B: 15 generated tokens against 52, for the same tool call), `OLLAMA_NUM_PREDICT`
+caps generation so a rambling reply fails visibly rather than as a timeout, and
+`OLLAMA_NUM_BATCH` / `OLLAMA_NUM_THREAD` / `OLLAMA_NUM_GPU` are the CPU knobs, unset by default
+because Ollama picks better defaults than a guess would.
+
 | Variable | Default | What it does |
 |---|---|---|
 | `AI_PROVIDER` | `dummy` | `ollama` for real use; `dummy` needs nothing installed |
@@ -251,6 +258,10 @@ from `.env.example`.
 | `TOOL_LOOP_MAX_TURNS` | `12` | conversation cap for decision edits |
 | `OLLAMA_MODEL` | `gpt-oss:20b` | any tool-capable local model |
 | `OLLAMA_BASE_URL` | `http://localhost:11434` | |
+| `OLLAMA_THINK` | `false` | private reasoning; dropped automatically if the model has none |
+| `OLLAMA_NUM_CTX` · `OLLAMA_TEMPERATURE` · `OLLAMA_KEEP_ALIVE` | `8192` · `0` · `30m` | |
+| `OLLAMA_NUM_PREDICT` · `_PROSE` | `512` · `200` | generation caps; Ollama's own default is unbounded |
+| `OLLAMA_NUM_BATCH` · `_THREAD` · `_GPU` | unset | CPU tuning, sent only when set |
 | `OLLAMA_TIMEOUT_SECONDS` | `600` | raised from 120 for CPU machines |
 
 Deeper settings live in `backend/src/main/resources/application.yml`, each carrying the
