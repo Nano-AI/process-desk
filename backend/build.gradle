@@ -35,6 +35,12 @@ dependencies {
 
 tasks.named('test') {
     useJUnitPlatform()
+    // The conformance suite prints a table of expected against actual and writes it to
+    // build/reports/conformance.txt either way. Pass -Pverbose to see it on the console
+    // rather than reading the file.
+    if (project.hasProperty('verbose')) {
+        testLogging { showStandardStreams = true }
+    }
 }
 
 /**
@@ -131,6 +137,12 @@ tasks.register('bench', JavaExec) {
     systemProperty 'bench.model', project.findProperty('llm') ?: 'gpt-oss:20b'
     systemProperty 'bench.runs', project.findProperty('runs') ?: '1'
     systemProperty 'bench.maxTurns', project.findProperty('maxTurns') ?: '12'
+    // A full run is 38 requests and, on a model that takes a minute or two each, most of an
+    // hour. -Ponly picks a subset by category or by a word in the request, so a change can be
+    // measured against the handful of cases it was supposed to affect.
+    //   ./gradlew bench -Pllm=ornith:9b -Ponly=QUESTION
+    //   ./gradlew bench -Pllm=ornith:9b -Ponly=asequibilidad
+    systemProperty 'bench.only', project.findProperty('only') ?: ''
 }
 
 tasks.register('focus', JavaExec) {
