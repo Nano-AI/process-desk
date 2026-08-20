@@ -60,50 +60,51 @@ genuinely messy model breaks.
 ## Choosing a provider
 
 One setting, `AI_PROVIDER` in `.env`. The choice has a data-governance answer as well as a
-technical one.
+technical one, and the governance answer already decided it: free-tier hosted terms permit
+training on submitted input, which makes a hosted key usable for the fixture files in this repo
+and unusable for real production decision logic at any quality level. So the local model is not
+the cheap option here. It is the only one.
 
-**`dummy`** is the default. It answers from the file itself, with no model, no network, and no
-install. Enough to watch the editor, the gates, and the approval flow work end to end.
-
-**`ollama`** runs a 9B model on your own machine, and nothing leaves it. Measured on an M4
-laptop: about 7 seconds for a process edit, and 65 to 150 seconds for a decision edit that goes
-through the full tool loop. This is the provider the architecture is aimed at.
+**`ollama`** runs the model on your own machine and nothing leaves it. This is what the
+architecture is aimed at, and the target is a laptop or a server that is **short on CPU compute
+and not short on memory** — no GPU assumed.
 
 ```bash
-brew install ollama && ollama pull ornith:9b
+brew install ollama && ollama pull gpt-oss:20b
 ```
 
 ```bash
 AI_PROVIDER=ollama
-OLLAMA_MODEL=ornith:9b
+OLLAMA_MODEL=gpt-oss:20b
 ```
 
-**`gemini`** is faster and stronger, and it sends the projection off the machine. That is about
-150 tokens of business vocabulary carrying no identifiers, and nothing that would let a reader
-reconstruct the asset, but it is still a decision to make deliberately rather than by leaving a
-default in place.
+Which model goes in that slot is decided by **active** parameters, not by size on disk. On a CPU
+both halves of a turn are charged for the parameters a token actually touches — generation is
+`bandwidth ÷ active bytes`, prefill is `FLOPS ÷ (2 × active params)` — so a mixture-of-experts
+model that stores a lot and activates a little wins twice. That makes the ordering come out
+backwards from the intuitive one:
 
-```bash
-AI_PROVIDER=gemini
-GEMINI_API_KEY=            # https://aistudio.google.com/apikey
-GEMINI_MODEL=gemini-3.5-flash
-GEMINI_DAILY_LIMIT=500     # https://ai.dev/rate-limit
-```
+| Model | Size | Active | Where it fits |
+|---|---|---|---|
+| `qwen3.5:35b` | 24 GB | ~3B | a server with RAM and no GPU |
+| `gpt-oss:20b` | 13 GB | 3.6B | the laptop default, and the only one benchmarked here — 17/20 |
+| `qwen3.5:9b` | 6.6 GB | 9B | the "7B-class" pick, and the slowest of these on a CPU |
+| `qwen3.5:4b` | 3.4 GB | 4B | a weak CPU, and the floor test for the harness |
 
-Two things to know before relying on it. Free-tier terms permit the provider to train on your
-input and paid-tier terms do not. And models get retired, so a key issued after a retirement
-returns a 404 rather than a warning:
+Run every one of them with thinking off. Measured here: 9 seconds against 25, same answers.
 
-```bash
-curl -H "x-goog-api-key: $GEMINI_API_KEY" \
-  https://generativelanguage.googleapis.com/v1beta/models
-```
+**`dummy`** is the default, and stays the default for one reason: it needs nothing installed. It
+answers from the file itself, with no model and no network, which is enough to watch the editor,
+the gates and the approval flow work end to end on a fresh clone.
 
-Every turn of the tool loop is one billed request, so an eight-turn conversation costs eight of
-the daily allowance. `GET /api/health` reports what the application has spent today.
+**`gemini`** is still in the source and is no longer a target. The provider seam is what makes
+two models comparable, so the class is kept; the hosted path is not coming back, and the
+governance paragraph above is why.
 
-[`docs/08-choosing-a-model.md`](docs/08-choosing-a-model.md) covers which models can actually
-drive this, with the measurements.
+[`docs/08-choosing-a-model.md`](docs/08-choosing-a-model.md) covers which models can drive this,
+with the measurements. [`docs/12-small-model-adaptation.md`](docs/12-small-model-adaptation.md)
+covers running it on a small model on a CPU: what moved out of the prompt to make that possible,
+and the settings table for the machine.
 
 ## How it works
 
@@ -225,7 +226,7 @@ docs/                         01 through 11, see below
 
 | Endpoint | Purpose |
 |---|---|
-| `GET /api/health` | provider name and, for metered providers, calls spent today |
+| `GET /api/health` | provider name, and what it has spent — prefill tokens and seconds for the local model |
 | `GET /api/assets` · `GET /api/assets/{name}` | list and read files |
 | `PUT /api/assets/{name}` | save, after re-running the gates |
 | `POST /api/ai/ask` | the entry point: returns an answer or a proposed change |
@@ -245,25 +246,24 @@ from `.env.example`.
 
 | Variable | Default | What it does |
 |---|---|---|
-| `AI_PROVIDER` | `dummy` | `dummy`, `ollama`, or `gemini` |
+| `AI_PROVIDER` | `dummy` | `ollama` for real use; `dummy` needs nothing installed |
 | `TOOL_LOOP` | `true` | set `false` to force the one-shot path everywhere |
 | `TOOL_LOOP_MAX_TURNS` | `12` | conversation cap for decision edits |
-| `OLLAMA_MODEL` | `ornith:9b` | any tool-capable local model |
+| `OLLAMA_MODEL` | `gpt-oss:20b` | any tool-capable local model |
 | `OLLAMA_BASE_URL` | `http://localhost:11434` | |
-| `GEMINI_API_KEY` | empty | never commit this |
-| `GEMINI_MODEL` | `gemini-3.5-flash` | |
-| `GEMINI_DAILY_LIMIT` | `0` | `0` means unknown; the count is still reported |
+| `OLLAMA_TIMEOUT_SECONDS` | `600` | raised from 120 for CPU machines |
 
 Deeper settings live in `backend/src/main/resources/application.yml`, each carrying the
-measurement that produced it. Both providers run at temperature 0, because choosing which tool
+measurement that produced it. Every provider runs at temperature 0, because choosing which tool
 to call is a classification and sampling variance on a classification is pure downside.
 
 ## Tests and tools
 
 ```bash
 cd backend
-./gradlew test                                                   # 183 tests
-./gradlew bench                                                  # score a model over 20 requests
+./gradlew test                                                   # 202 tests
+./gradlew bench -Pllm=ornith:9b                                  # score a model over 38 requests
+./gradlew bench -Pllm=ornith:9b -Ponly=QUESTION                  # or one category, or one word
 ./gradlew focus -Pq="change the income risk category to high"    # what a request ranks to
 ./gradlew inspect                                                # examine a corpus file
 ./gradlew surveyCorpora                                          # stats over fetched corpora
@@ -273,6 +273,18 @@ The tool loop's own tests use a scripted provider rather than a live model, cove
 cap, an invented tool name, a reply with no tool call at all, a verbatim repeat, and the
 half-finished edit that must not be offered. What a real model chooses varies per run, so that
 question belongs in the benchmark.
+
+`RequestConformanceTest` is the same idea widened: 36 requests that are terse, misspelt,
+indirect, or in one of six languages, run through the parts of the loop that are decided by the
+words rather than by the model. It prints expected against actual for every row and writes the
+table to `build/reports/conformance.txt`; `-Pverbose` puts it on the console instead. It runs in
+about a second because nothing in it is a model, which is also the limit of what it proves.
+
+The benchmark is where a model actually answers. 38 requests, scored by what each one is *for*,
+because refusing is the right answer to "add a column for postcode" and the wrong answer to
+"change the DTI". `-Ponly` runs a subset and says so in the output, since a score over nine
+requests that reads like a score over thirty-eight is the same mistake as counting a timeout as
+a correct refusal.
 
 `scripts/fetch-corpora.sh` pulls 1241 DMN and 418 BPMN files from other open-source projects.
 They are gitignored and reproducible rather than vendored.
@@ -292,6 +304,7 @@ They are gitignored and reproducible rather than vendored.
 | [`09-tool-loop.md`](docs/09-tool-loop.md) | why the loop replaced the one-shot protocol |
 | [`10-capability-gap.md`](docs/10-capability-gap.md) | what the assistant still cannot do |
 | [`11-agentic-architecture.md`](docs/11-agentic-architecture.md) | the agentic layer, end to end |
+| [`12-small-model-adaptation.md`](docs/12-small-model-adaptation.md) | running it on a 7B, and what has to move out of the prompt |
 
 ## Contributing
 
