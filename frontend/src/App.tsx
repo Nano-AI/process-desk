@@ -4,7 +4,7 @@ import type { EditorHandle } from "./editor/editorApi";
 import { AssistantPanel } from "./assistant/AssistantPanel";
 import { buildNodeCatalog, type CatalogEntry } from "./graph/nodeCatalog";
 import { buildDecisionCatalog, type DecisionCatalog } from "./graph/decisionCatalog";
-import { health, listAssets, loadAsset, saveAsset } from "./llm/client";
+import { health, listAssets, loadAsset, saveAsset, type Health } from "./llm/client";
 
 export function App() {
   const [assets, setAssets] = useState<{ name: string }[]>([]);
@@ -20,13 +20,13 @@ export function App() {
   const [previewNote, setPreviewNote] = useState<string | null>(null);
   const [justSaved, setJustSaved] = useState(false);
   const [banner, setBanner] = useState<string | null>(null);
-  const [provider, setProvider] = useState("connecting…");
+  const [status, setStatus] = useState<Health | null>(null);
   const editorRef = useRef<EditorHandle | null>(null);
 
   useEffect(() => {
     health()
-      .then((h) => setProvider(h.provider))
-      .catch(() => setProvider("unavailable"));
+      .then(setStatus)
+      .catch(() => setStatus({ ok: false, provider: "unavailable" }));
     listAssets()
       .then((found) => {
         setAssets(found);
@@ -35,6 +35,16 @@ export function App() {
       })
       .catch(() => setBanner("Couldn't reach the server. Start the backend and reload."));
     // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // The badge reports what the local model has spent on prefill, which only changes while a
+  // request is running. Ten seconds is often enough to watch a number move during a long tool
+  // loop and rare enough that a call this cheap does not need thinking about.
+  useEffect(() => {
+    const timer = setInterval(() => {
+      health().then(setStatus).catch(() => undefined);
+    }, 10000);
+    return () => clearInterval(timer);
   }, []);
 
   async function open(name: string) {
@@ -157,7 +167,7 @@ export function App() {
           <button className="btn btn-secondary" onClick={undoLast} disabled={!openName}>
             Undo
           </button>
-          <span className="model-badge">assistant: {provider}</span>
+          <ModelBadge status={status} />
         </div>
       </header>
 
@@ -199,5 +209,51 @@ export function App() {
         <span>{openName ?? "no file open"}</span>
       </footer>
     </div>
+  );
+}
+
+/**
+ * What is answering, top right.
+ *
+ * <p>The model's own name rather than a category, because "ollama" is not an answer to "what
+ * read my file" and the name is what a person types into `OLLAMA_MODEL` to change it. The
+ * second line is prefill: on a machine without a GPU that is where a tool loop spends its
+ * time, so it is the one number worth putting on screen without being asked for.
+ */
+function ModelBadge({ status }: { status: Health | null }) {
+  if (!status) {
+    return <span className="model-badge">connecting…</span>;
+  }
+  if (!status.ok) {
+    return <span className="model-badge offline">no backend</span>;
+  }
+  // The dummy provider names itself "placeholder". Saying so is more use than printing it:
+  // nothing is reading the file, and that is the thing a user needs to know.
+  if (status.provider === "placeholder") {
+    return (
+      <span className="model-badge offline" title="Set AI_PROVIDER=ollama in .env to connect a model.">
+        no model
+      </span>
+    );
+  }
+
+  const usage = status.usage ?? {};
+  const prefill = usage.prefillTokensPerSecond ?? 0;
+  const generation = usage.generationTokensPerSecond ?? 0;
+  const spent =
+    prefill > 0
+      ? `${Math.round(prefill)} tok/s in · ${Math.round(generation)} out`
+      : "idle";
+  const detail =
+    prefill > 0
+      ? `${usage.promptTokens ?? 0} tokens read in ${(usage.promptSeconds ?? 0).toFixed(1)}s, ` +
+        `${usage.replyTokens ?? 0} written in ${(usage.replySeconds ?? 0).toFixed(1)}s`
+      : "Nothing measured yet. Ask it something.";
+
+  return (
+    <span className="model-badge" title={detail}>
+      <span className="model-name">{status.provider}</span>
+      <span className="model-spent">{spent}</span>
+    </span>
   );
 }

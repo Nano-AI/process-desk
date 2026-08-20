@@ -6,7 +6,9 @@ export default defineConfig({
   server: {
     port: 5173,
     proxy: {
-      "/api": "http://localhost:4000",
+      // Overridable so a second backend can be run alongside one that is already up,
+      // which is the only way to look at two providers without stopping either.
+      "/api": process.env.API_URL ?? "http://localhost:4000",
     },
   },
 });

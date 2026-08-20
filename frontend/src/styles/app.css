@@ -125,13 +125,36 @@ button, input, textarea, select { font: inherit; color: inherit; }
 }
 
 .model-badge {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 1px;
   font-family: var(--font-mono);
   font-size: 11px;
+  line-height: 1.25;
   padding: 3px 8px;
   border: 1px dashed var(--line-strong);
   border-radius: 4px;
   color: var(--ink-soft);
   background: var(--panel);
+  white-space: nowrap;
+}
+
+/* The model's own name is the thing being identified, so it carries the weight. */
+.model-badge .model-name {
+  color: var(--ink);
+  font-weight: 600;
+}
+
+.model-badge .model-spent {
+  font-size: 10px;
+  color: var(--ink-soft);
+}
+
+/* No model, or no backend. Stated rather than dressed up as a name. */
+.model-badge.offline {
+  color: var(--ink-soft);
+  font-style: italic;
 }
 
 /* ── Buttons ── */

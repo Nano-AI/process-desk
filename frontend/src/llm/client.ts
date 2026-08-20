@@ -121,7 +121,29 @@ export async function askStreaming(
   return result;
 }
 
-export async function health(): Promise<{ ok: boolean; provider: string }> {
+/**
+ * What is answering, and what it has spent.
+ *
+ * `usage` is whatever the provider meters itself in, so its shape is deliberately loose: a
+ * hosted provider counts calls against a daily quota, and the local one counts prefill, which
+ * is the resource that actually runs out on a machine without a GPU.
+ */
+export type Health = {
+  ok: boolean;
+  provider: string;
+  usage?: {
+    promptTokens?: number;
+    promptSeconds?: number;
+    prefillTokensPerSecond?: number;
+    replyTokens?: number;
+    replySeconds?: number;
+    generationTokensPerSecond?: number;
+    callsToday?: number;
+    remaining?: number;
+  };
+};
+
+export async function health(): Promise<Health> {
   const res = await fetch("/api/health");
   if (!res.ok) throw new Error("backend unreachable");
   return res.json();
