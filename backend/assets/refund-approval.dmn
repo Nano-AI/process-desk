@@ -1,79 +1,95 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<definitions xmlns="https://www.omg.org/spec/DMN/20191111/MODEL/"
-             xmlns:dmndi="https://www.omg.org/spec/DMN/20191111/DMNDI/"
-             xmlns:kie="https://kie.org/dmn/extensions/1.0"
+<definitions xmlns="https://www.omg.org/spec/DMN/20240513/MODEL/"
              xmlns:dc="http://www.omg.org/spec/DMN/20180521/DC/"
              xmlns:di="http://www.omg.org/spec/DMN/20180521/DI/"
+             xmlns:dmndi="https://www.omg.org/spec/DMN/20230324/DMNDI/"
+             xmlns:feel="https://www.omg.org/spec/DMN/20240513/FEEL/"
+             xmlns:kie="https://kie.org/dmn/extensions/1.0"
              id="refund-approval"
              name="Refund Approval"
              namespace="https://example.internal/decisions/refund">
-
-  <inputData id="InputData_amount" name="Refund Amount">
-    <variable id="Variable_amount" name="Refund Amount" typeRef="number"/>
-  </inputData>
-
-  <inputData id="InputData_member" name="Member Tier">
-    <variable id="Variable_member" name="Member Tier" typeRef="string"/>
-  </inputData>
-
-  <decision id="Decision_approval" name="Approval Route">
-    <variable id="Variable_approval" name="Approval Route" typeRef="string"/>
-    <informationRequirement id="InfoReq_1">
-      <requiredInput href="#InputData_amount"/>
-    </informationRequirement>
-    <informationRequirement id="InfoReq_2">
-      <requiredInput href="#InputData_member"/>
-    </informationRequirement>
-    <decisionTable id="DecisionTable_approval" hitPolicy="FIRST" outputLabel="Approval Route">
-      <input id="Input_amount">
-        <inputExpression id="InputExpression_amount" typeRef="number">
-          <text>Refund Amount</text>
-        </inputExpression>
-      </input>
-      <input id="Input_member">
-        <inputExpression id="InputExpression_member" typeRef="string">
-          <text>Member Tier</text>
-        </inputExpression>
-      </input>
-      <output id="Output_route" typeRef="string"/>
-
-      <rule id="Rule_1">
-        <inputEntry id="RuleInput_1_1"><text>&lt;= 50</text></inputEntry>
-        <inputEntry id="RuleInput_1_2"><text>-</text></inputEntry>
-        <outputEntry id="RuleOutput_1"><text>"Automatic"</text></outputEntry>
-      </rule>
-      <rule id="Rule_2">
-        <inputEntry id="RuleInput_2_1"><text>&gt; 50</text></inputEntry>
-        <inputEntry id="RuleInput_2_2"><text>"Executive"</text></inputEntry>
-        <outputEntry id="RuleOutput_2"><text>"Manager Approval"</text></outputEntry>
-      </rule>
-      <rule id="Rule_3">
-        <inputEntry id="RuleInput_3_1"><text>&gt; 50</text></inputEntry>
-        <inputEntry id="RuleInput_3_2"><text>-</text></inputEntry>
-        <outputEntry id="RuleOutput_3"><text>"Store Review"</text></outputEntry>
-      </rule>
-    </decisionTable>
-  </decision>
-
-  <dmndi:DMNDI>
-    <dmndi:DMNDiagram id="DMNDiagram_1" name="Default DRD">
-      <dmndi:DMNShape id="DMNShape_Decision" dmnElementRef="Decision_approval">
-        <dc:Bounds x="240" y="80" width="160" height="80"/>
-      </dmndi:DMNShape>
-      <dmndi:DMNShape id="DMNShape_Amount" dmnElementRef="InputData_amount">
-        <dc:Bounds x="140" y="260" width="160" height="60"/>
-      </dmndi:DMNShape>
-      <dmndi:DMNShape id="DMNShape_Member" dmnElementRef="InputData_member">
-        <dc:Bounds x="360" y="260" width="160" height="60"/>
-      </dmndi:DMNShape>
-      <dmndi:DMNEdge id="DMNEdge_1" dmnElementRef="InfoReq_1">
-        <di:waypoint x="220" y="260"/>
-        <di:waypoint x="300" y="160"/>
-      </dmndi:DMNEdge>
-      <dmndi:DMNEdge id="DMNEdge_2" dmnElementRef="InfoReq_2">
-        <di:waypoint x="440" y="260"/>
-        <di:waypoint x="345" y="160"/>
-      </dmndi:DMNEdge>
-    </dmndi:DMNDiagram>
-  </dmndi:DMNDI>
+   <decision id="Decision_approval" name="Approval Route">
+      <variable id="Variable_approval" name="Approval Route" typeRef="string"/>
+      <informationRequirement id="InfoReq_1">
+         <requiredInput href="#InputData_amount"/>
+      </informationRequirement>
+      <informationRequirement id="InfoReq_2">
+         <requiredInput href="#InputData_member"/>
+      </informationRequirement>
+      <decisionTable hitPolicy="FIRST"
+                     id="DecisionTable_approval"
+                     outputLabel="Approval Route">
+         <input id="Input_amount">
+            <inputExpression id="InputExpression_amount" typeRef="number">
+               <text>Refund Amount</text>
+            </inputExpression>
+         </input>
+         <input id="Input_member">
+            <inputExpression id="InputExpression_member" typeRef="string">
+               <text>Member Tier</text>
+            </inputExpression>
+         </input>
+         <output id="Output_route" typeRef="string"/>
+         <rule id="Rule_1">
+            <inputEntry id="RuleInput_1_1">
+               <text>&lt;= 60</text>
+            </inputEntry>
+            <inputEntry id="RuleInput_1_2">
+               <text>-</text>
+            </inputEntry>
+            <outputEntry id="RuleOutput_1">
+               <text>"Automatic"</text>
+            </outputEntry>
+         </rule>
+         <rule id="Rule_2">
+            <inputEntry id="RuleInput_2_1">
+               <text>&gt; 60</text>
+            </inputEntry>
+            <inputEntry id="RuleInput_2_2">
+               <text>"Executive"</text>
+            </inputEntry>
+            <outputEntry id="RuleOutput_2">
+               <text>"Manager Approval"</text>
+            </outputEntry>
+         </rule>
+         <rule id="Rule_3">
+            <inputEntry id="RuleInput_3_1">
+               <text>&gt; 60</text>
+            </inputEntry>
+            <inputEntry id="RuleInput_3_2">
+               <text>-</text>
+            </inputEntry>
+            <outputEntry id="RuleOutput_3">
+               <text>"Store Review"</text>
+            </outputEntry>
+         </rule>
+      </decisionTable>
+   </decision>
+   <inputData id="InputData_amount" name="Refund Amount">
+      <variable id="Variable_amount" name="Refund Amount" typeRef="number"/>
+   </inputData>
+   <inputData id="InputData_member" name="Member Tier">
+      <variable id="Variable_member" name="Member Tier" typeRef="string"/>
+   </inputData>
+   <dmndi:DMNDI>
+      <dmndi:DMNDiagram id="DMNDiagram_1" name="Default DRD">
+         <dmndi:DMNShape dmnElementRef="Decision_approval" id="DMNShape_Decision">
+            <dc:Bounds height="80" width="160" x="240" y="80"/>
+         </dmndi:DMNShape>
+         <dmndi:DMNShape dmnElementRef="InputData_amount" id="DMNShape_Amount">
+            <dc:Bounds height="60" width="160" x="140" y="260"/>
+         </dmndi:DMNShape>
+         <dmndi:DMNShape dmnElementRef="InputData_member" id="DMNShape_Member">
+            <dc:Bounds height="60" width="160" x="360" y="260"/>
+         </dmndi:DMNShape>
+         <dmndi:DMNEdge dmnElementRef="InfoReq_1" id="DMNEdge_1">
+            <di:waypoint x="220" y="260"/>
+            <di:waypoint x="300" y="160"/>
+         </dmndi:DMNEdge>
+         <dmndi:DMNEdge dmnElementRef="InfoReq_2" id="DMNEdge_2">
+            <di:waypoint x="440" y="260"/>
+            <di:waypoint x="345" y="160"/>
+         </dmndi:DMNEdge>
+      </dmndi:DMNDiagram>
+   </dmndi:DMNDI>
 </definitions>
