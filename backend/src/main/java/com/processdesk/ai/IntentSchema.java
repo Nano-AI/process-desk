@@ -89,6 +89,17 @@ public final class IntentSchema {
         return schema;
     }
 
+    /**
+     * The longest a step name may be.
+     *
+     * <p>Declared to the model as a schema bound and enforced again in the controller. Both,
+     * because they fail differently: the schema is a request not every provider honours —
+     * Gemini rejects maxLength outright and {@link GeminiSchema} strips it — while the
+     * controller is the one that actually refuses. Eighty characters is a wide box on the
+     * diagram and about twice the longest name in any asset here.
+     */
+    static final int MAX_NAME = 80;
+
     public static Map<String, Object> forProcess(ProcessProjection process) {
         Map<String, Object> kind = new LinkedHashMap<>();
         kind.put("type", "string");
@@ -106,7 +117,15 @@ public final class IntentSchema {
 
         Map<String, Object> value = new LinkedHashMap<>();
         value.put("type", "string");
-        value.put("description", "For RENAME, the step's new name. For ADD_AFTER, the new step's name.");
+        // targetStepName is held to an enum and so cannot be invented; value was left open,
+        // and a model asked to do something these four kinds cannot express filled it with
+        // the flow line from the projection — a 150-character "name" that every gate passed.
+        // Saying the bound out loud is the cheap half of the fix; AiController is the half
+        // that holds when the model ignores it.
+        value.put("maxLength", MAX_NAME);
+        value.put("description", "For RENAME, the step's new name. For ADD_AFTER, the new step's "
+                + "name. One short label for a single step — never a list or a path of several "
+                + "steps, and never the process flow written out.");
 
         Map<String, Object> reason = new LinkedHashMap<>();
         reason.put("type", "string");

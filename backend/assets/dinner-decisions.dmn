@@ -141,7 +141,7 @@
          </semantic:output>
          <semantic:rule id="_4bd36786-88b1-44c5-89e6-a680abf879cf">
             <semantic:inputEntry id="_4bd36786-88b1-44c5-89e6-a680abf879cf-0">
-               <semantic:text>&gt;=154.4</semantic:text>
+               <semantic:text>&gt;=18</semantic:text>
             </semantic:inputEntry>
             <semantic:inputEntry id="_4bd36786-88b1-44c5-89e6-a680abf879cf-1">
                <semantic:text>&lt;50</semantic:text>
@@ -152,7 +152,7 @@
          </semantic:rule>
          <semantic:rule id="_60028ca9-14ee-4b93-ba7a-65672c9f1c98">
             <semantic:inputEntry id="_60028ca9-14ee-4b93-ba7a-65672c9f1c98-0">
-               <semantic:text>&lt;154.4</semantic:text>
+               <semantic:text>&lt;18</semantic:text>
             </semantic:inputEntry>
             <semantic:inputEntry id="_60028ca9-14ee-4b93-ba7a-65672c9f1c98-1">
                <semantic:text>-</semantic:text>

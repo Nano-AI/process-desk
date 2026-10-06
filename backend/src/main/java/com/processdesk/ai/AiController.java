@@ -19,6 +19,8 @@ import java.util.stream.Collectors;
 @RequestMapping("/api/ai")
 public class AiController {
 
+    private static final int MAX_STEP_NAME = IntentSchema.MAX_NAME;
+
     private final AiProvider ai;
     private final StepResolver resolver;
     private final ProcessEditor editor;
@@ -221,6 +223,33 @@ public class AiController {
         return applyIntent(request.message(), xml, intent);
     }
 
+    /**
+     * Why this name cannot be used, or null when it is fine.
+     *
+     * <p>Both process edits carry a name in the same field, and neither the schema nor the
+     * gates can tell a label from a paragraph. A step name is a box on a diagram: when one
+     * arrives that is longer than a box could hold, or that is the process's own flow line
+     * copied back, the honest answer is to refuse it and say which — not to write it and
+     * report three green checks over it.
+     */
+    private String nameProblem(ProcessProjection process, String value) {
+        if (value == null || value.isBlank()) {
+            return "I couldn't tell what the new name should be, so I haven't changed anything.";
+        }
+        String name = value.trim();
+        if (process.looksLikeFlowPath(name)) {
+            return "That new name is the whole process written out as a path, not a name for one "
+                    + "step, so I haven't changed anything. If you meant to remove or reorder "
+                    + "steps, this assistant can only rename a step or add one after another.";
+        }
+        if (name.length() > MAX_STEP_NAME) {
+            return "That new name is " + name.length() + " characters, and a step name has to fit "
+                    + "in a box on the diagram, so I haven't changed anything. Try one under "
+                    + MAX_STEP_NAME + ".";
+        }
+        return null;
+    }
+
     /** Resolves the step, performs the edit, and runs the gates. */
     private ProposeResponse applyIntent(String message, String xml, AiProvider.EditIntent intent) {
         BpmnDocument doc;
@@ -233,6 +262,21 @@ public class AiController {
         StepResolver.Resolution target = resolver.resolve(doc, intent.targetStepName());
         if (!target.resolved()) {
             return ProposeResponse.declined(describeMiss(intent.targetStepName(), target));
+        }
+
+        // The gates check the shape of the graph, and a name cannot bend that shape: every
+        // structure, connections and rules check passes over a step called anything at all.
+        // So the name is checked here, before the edit, or it is not checked anywhere.
+        String nameProblem = nameProblem(ProcessProjection.of(xml), intent.value());
+        if (nameProblem != null) {
+            audit.record("declined", Map.of(
+                    "provider", ai.name(),
+                    "request", message,
+                    "intent", intent.kind().name(),
+                    "resolvedStep", target.name(),
+                    "value", String.valueOf(intent.value()),
+                    "reason", nameProblem));
+            return ProposeResponse.declined(nameProblem);
         }
 
         try {
